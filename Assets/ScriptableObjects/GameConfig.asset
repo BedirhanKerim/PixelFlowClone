@@ -1,0 +1,30 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9b3a96f5ecf6df14bb6cff9ba9f96549, type: 3}
+  m_Name: GameConfig
+  m_EditorClassIdentifier: Assembly-CSharp::GameConfig
+  BoardWorldWidth: 10
+  CameraEuler: {x: 55, y: 0, z: 0}
+  CameraDistanceMultiplier: 1.8
+  ShelfSlotCount: 5
+  MaxSimultaneousPigsOnPath: 5
+  CubePopInDuration: 0.25
+  CubePopInStagger: 0.01
+  CellPaintDuration: 0.15
+  BulletFlightDuration: 0.12
+  PigLapDuration: 6
+  LevelRevealDuration: 2
+  LevelTransitionDuration: 0.6
+  AmmoLow: 10
+  AmmoHigh: 20
+  PerimeterOffset: 0.75
+  PerimeterHeight: 0.3
