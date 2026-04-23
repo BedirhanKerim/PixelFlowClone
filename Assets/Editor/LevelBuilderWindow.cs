@@ -11,13 +11,17 @@ public class LevelBuilderWindow : EditorWindow
     private int _maxColors = 6;
     private float _paletteMergeThreshold = 55f;
     private DownscaleFilter _filter = DownscaleFilter.Bilinear;
+    private int _alphaThreshold = 128;
     private string _levelName = "";
 
     private Color32[] _sampledPixels;
+    private CellType[] _sampledTypes;
     private List<Color32> _palette;
     private byte[] _indices;
     private Texture2D _previewTex;
     private bool _previewDirty;
+
+    private static readonly Color32 EmptyPreviewColor = new Color32(28, 28, 32, 255);
 
     [MenuItem("PixelFlow/Level Builder")]
     public static void Open()
@@ -71,6 +75,13 @@ public class LevelBuilderWindow : EditorWindow
         if (newFilter != _filter)
         {
             _filter = newFilter;
+            _previewDirty = true;
+        }
+
+        int newAlpha = EditorGUILayout.IntSlider("Alpha Threshold", _alphaThreshold, 0, 255);
+        if (newAlpha != _alphaThreshold)
+        {
+            _alphaThreshold = newAlpha;
             _previewDirty = true;
         }
     }
@@ -143,6 +154,7 @@ public class LevelBuilderWindow : EditorWindow
             _palette = null;
             _indices = null;
             _sampledPixels = null;
+            _sampledTypes = null;
             if (_previewTex != null) DestroyImmediate(_previewTex);
             _previewTex = null;
             return;
@@ -159,6 +171,7 @@ public class LevelBuilderWindow : EditorWindow
     {
         int total = _gridSize.x * _gridSize.y;
         _sampledPixels = new Color32[total];
+        _sampledTypes = new CellType[total];
         int w = _source.width;
         int h = _source.height;
 
@@ -168,9 +181,21 @@ public class LevelBuilderWindow : EditorWindow
             {
                 float u = (x + 0.5f) / _gridSize.x;
                 float v = (y + 0.5f) / _gridSize.y;
-                _sampledPixels[y * _gridSize.x + x] = _filter == DownscaleFilter.Point
+                Color32 c = _filter == DownscaleFilter.Point
                     ? SamplePoint(u, v, w, h)
                     : SampleBilinear(u, v);
+
+                int i = y * _gridSize.x + x;
+                if (c.a < _alphaThreshold)
+                {
+                    _sampledTypes[i] = CellType.Empty;
+                    _sampledPixels[i] = new Color32(0, 0, 0, 255);
+                }
+                else
+                {
+                    _sampledTypes[i] = CellType.Normal;
+                    _sampledPixels[i] = c;
+                }
             }
         }
     }
@@ -192,6 +217,8 @@ public class LevelBuilderWindow : EditorWindow
         _palette = new List<Color32>();
         for (int i = 0; i < _sampledPixels.Length; i++)
         {
+            if (_sampledTypes[i] == CellType.Empty) continue;
+
             var c = _sampledPixels[i];
             bool unique = true;
             for (int p = 0; p < _palette.Count; p++)
@@ -216,7 +243,7 @@ public class LevelBuilderWindow : EditorWindow
         _indices = new byte[_sampledPixels.Length];
         for (int i = 0; i < _sampledPixels.Length; i++)
         {
-            _indices[i] = (byte)NearestPaletteIndex(_sampledPixels[i]);
+            _indices[i] = _sampledTypes[i] == CellType.Empty ? (byte)0 : (byte)NearestPaletteIndex(_sampledPixels[i]);
         }
     }
 
@@ -247,7 +274,7 @@ public class LevelBuilderWindow : EditorWindow
             for (int x = 0; x < _gridSize.x; x++)
             {
                 int i = y * _gridSize.x + x;
-                pixels[i] = _palette[_indices[i]];
+                pixels[i] = _sampledTypes[i] == CellType.Empty ? EmptyPreviewColor : _palette[_indices[i]];
             }
         }
         _previewTex.SetPixels32(pixels);
@@ -261,7 +288,7 @@ public class LevelBuilderWindow : EditorWindow
         level.GridSize = _gridSize;
         level.PaletteColors = _palette.ToArray();
         level.CellColorIndices = (byte[])_indices.Clone();
-        level.StoneMask = new bool[_indices.Length];
+        level.CellTypes = (CellType[])_sampledTypes.Clone();
         AutoFillPigs(level);
 
         const string folder = "Assets/ScriptableObjects/Levels";
@@ -282,7 +309,10 @@ public class LevelBuilderWindow : EditorWindow
     private void AutoFillPigs(LevelData level)
     {
         var counts = new int[_palette.Count];
-        for (int i = 0; i < _indices.Length; i++) counts[_indices[i]]++;
+        for (int i = 0; i < _indices.Length; i++)
+        {
+            if (_sampledTypes[i] == CellType.Normal) counts[_indices[i]]++;
+        }
 
         var all = new List<PigConfig>();
         for (byte c = 0; c < _palette.Count; c++)

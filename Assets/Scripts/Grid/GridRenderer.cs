@@ -55,6 +55,7 @@ public class GridRenderer : MonoBehaviour
     private void OnCellPainted(ref CellPainted e)
     {
         int idx = _model.Index(e.Cell);
+        if (_renderers[idx] == null) return;
         var color = (Color)_model.PaletteColor(e.ColorIndex);
         _renderers[idx].GetPropertyBlock(_mpb);
         _mpb.SetColor(BaseColorId, color);
@@ -81,7 +82,9 @@ public class GridRenderer : MonoBehaviour
             for (int x = 0; x < size.x; x++)
             {
                 int i = y * size.x + x;
-                bool isStone = data.StoneMask[i];
+                CellType type = data.CellTypes[i];
+                if (type == CellType.Empty) continue;
+
                 byte colorIndex = data.CellColorIndices[i];
                 Color target = data.PaletteColors[colorIndex];
 
@@ -92,11 +95,11 @@ public class GridRenderer : MonoBehaviour
 
                 go.AddComponent<MeshFilter>().sharedMesh = _cubeMesh;
                 var mr = go.AddComponent<MeshRenderer>();
-                mr.sharedMaterial = isStone ? _sharedStoneMat : _sharedNormalMat;
+                mr.sharedMaterial = type == CellType.Stone ? _sharedStoneMat : _sharedNormalMat;
                 mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                 mr.receiveShadows = false;
 
-                Color initial = isStone ? StoneColor : BlendToPlaceholder(target);
+                Color initial = type == CellType.Stone ? StoneColor : BlendToPlaceholder(target);
                 mr.GetPropertyBlock(_mpb);
                 _mpb.SetColor(BaseColorId, initial);
                 mr.SetPropertyBlock(_mpb);
@@ -106,17 +109,19 @@ public class GridRenderer : MonoBehaviour
             }
         }
 
-        AnimatePopIn(total);
+        AnimatePopIn();
     }
 
-    private void AnimatePopIn(int total)
+    private void AnimatePopIn()
     {
         Vector3 scale = Vector3.one * _cubeSize * 0.95f;
-        for (int i = 0; i < total; i++)
+        int stagger = 0;
+        for (int i = 0; i < _cubes.Length; i++)
         {
+            if (_cubes[i] == null) continue;
             _cubes[i].DOScale(scale, _config.CubePopInDuration)
                 .SetEase(Ease.OutBack)
-                .SetDelay(i * _config.CubePopInStagger);
+                .SetDelay(stagger++ * _config.CubePopInStagger);
         }
     }
 

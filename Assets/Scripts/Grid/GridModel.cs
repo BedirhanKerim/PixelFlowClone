@@ -6,7 +6,7 @@ public class GridModel
     private Vector2Int _size;
     private byte[] _targetColors;
     private bool[] _painted;
-    private bool[] _stone;
+    private CellType[] _types;
     private Color32[] _palette;
     private int _normalCellCount;
     private int _paintedCount;
@@ -23,26 +23,26 @@ public class GridModel
         int total = _size.x * _size.y;
         _targetColors = new byte[total];
         _painted = new bool[total];
-        _stone = new bool[total];
+        _types = new CellType[total];
         _palette = data.PaletteColors;
 
         int cellLen = data.CellColorIndices?.Length ?? 0;
-        int stoneLen = data.StoneMask?.Length ?? 0;
-        if (cellLen != total || stoneLen != total)
+        int typeLen = data.CellTypes?.Length ?? 0;
+        if (cellLen != total || typeLen != total)
         {
             Debug.LogError($"LevelData '{data.name}' arrays do not match grid size {_size.x}x{_size.y}={total}. " +
-                           $"CellColorIndices={cellLen}, StoneMask={stoneLen}. Regenerate the level.");
+                           $"CellColorIndices={cellLen}, CellTypes={typeLen}. Regenerate the level.");
             return;
         }
 
         System.Array.Copy(data.CellColorIndices, _targetColors, total);
-        System.Array.Copy(data.StoneMask, _stone, total);
+        System.Array.Copy(data.CellTypes, _types, total);
 
         _normalCellCount = 0;
         _paintedCount = 0;
         for (int i = 0; i < total; i++)
         {
-            if (!_stone[i]) _normalCellCount++;
+            if (_types[i] == CellType.Normal) _normalCellCount++;
         }
     }
 
@@ -54,14 +54,16 @@ public class GridModel
 
     public byte GetTargetColor(CellAddress c) => _targetColors[Index(c)];
     public bool IsPainted(CellAddress c) => _painted[Index(c)];
-    public bool IsStone(CellAddress c) => _stone[Index(c)];
+    public CellType GetCellType(CellAddress c) => _types[Index(c)];
+    public bool IsEmpty(CellAddress c) => _types[Index(c)] == CellType.Empty;
+    public bool IsStone(CellAddress c) => _types[Index(c)] == CellType.Stone;
 
     public Color32 PaletteColor(byte index) => _palette[index];
 
     public bool TryPaint(CellAddress c, byte colorIndex)
     {
         int i = Index(c);
-        if (_stone[i] || _painted[i] || _targetColors[i] != colorIndex) return false;
+        if (_types[i] != CellType.Normal || _painted[i] || _targetColors[i] != colorIndex) return false;
         _painted[i] = true;
         _paintedCount++;
         return true;
@@ -69,8 +71,8 @@ public class GridModel
 
     public bool IsLevelComplete() => _paintedCount >= _normalCellCount;
 
-    /// Walks cells from startCell in direction. Returns first cell whose target color matches
-    /// and is unpainted. Stone blocks the line entirely. Painted cells are passed through.
+    /// Walks cells from startCell in direction. Returns first unpainted normal cell whose target
+    /// color matches. Stone blocks the line. Empty and painted cells are passed through.
     public bool TryFindFirstMatch(CellAddress startCell, Vector2Int direction, byte colorIndex, out CellAddress hit)
     {
         hit = default;
@@ -79,8 +81,8 @@ public class GridModel
         while (InBounds(x, y))
         {
             int i = Index(x, y);
-            if (_stone[i]) return false;
-            if (!_painted[i] && _targetColors[i] == colorIndex)
+            if (_types[i] == CellType.Stone) return false;
+            if (_types[i] == CellType.Normal && !_painted[i] && _targetColors[i] == colorIndex)
             {
                 hit = new CellAddress(x, y);
                 return true;

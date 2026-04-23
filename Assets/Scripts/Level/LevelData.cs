@@ -7,7 +7,7 @@ public class LevelData : ScriptableObject
     public Vector2Int GridSize = new Vector2Int(20, 20);
     public Color32[] PaletteColors;
     public byte[] CellColorIndices;
-    public bool[] StoneMask;
+    public CellType[] CellTypes;
     public PigConfig[] ShelfPigs;
     public PigConfig[] QueuePigs;
 }
