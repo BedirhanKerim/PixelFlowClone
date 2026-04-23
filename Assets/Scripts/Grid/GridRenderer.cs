@@ -46,6 +46,8 @@ public class GridRenderer : MonoBehaviour
 
     public float CubeSize => _cubeSize;
     public Vector3 GetCellWorldPos(CellAddress c) => _originOffset + new Vector3(c.X * _cubeSize, 0f, c.Y * _cubeSize);
+    public Transform GetCubeTransform(CellAddress c) => _cubes != null ? _cubes[_model.Index(c)] : null;
+    public Vector3 OriginOffset => _originOffset;
 
     private void OnLevelLoaded(ref LevelLoaded e)
     {
