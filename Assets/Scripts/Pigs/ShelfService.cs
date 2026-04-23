@@ -43,7 +43,6 @@ public class ShelfService
     {
         var pig = _slots[index];
         if (pig == null) return;
-        pig.SetInteractable(false);
         _slots[index] = null;
         _reserved[index] = true;
     }

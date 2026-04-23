@@ -739,7 +739,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &478862485
 Transform:
   m_ObjectHideFlags: 0
@@ -1434,34 +1434,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4aa46c74e70aae445acad9d295cd3b08, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::LevelLoader
-  _shelfRoot: {fileID: 0}
-  _queueRoot: {fileID: 0}
-  _activePigsRoot: {fileID: 0}
-  _shelfSlotPoints:
-  - {fileID: 490859555233662098}
-  - {fileID: 490859556004963656}
-  - {fileID: 490859554470531941}
-  - {fileID: 490859555796585807}
-  - {fileID: 490859556551343691}
-  _queueSlotSets:
-  - Points:
-    - {fileID: 4127919999550564070}
-    - {fileID: 3590551820885186045}
-    - {fileID: 4144401947617107015}
-    - {fileID: 276419190220548908}
-    - {fileID: 954014874}
-  - Points:
-    - {fileID: 6839148429289169239}
-    - {fileID: 285610918885898898}
-    - {fileID: 4513049340644340295}
-    - {fileID: 2620027673986946465}
-    - {fileID: 1919936430}
-  - Points:
-    - {fileID: 8711160404660882821}
-    - {fileID: 6509814767222814034}
-    - {fileID: 3140552233418071902}
-    - {fileID: 6098718531979508432}
-    - {fileID: 1246029402}
+  _shelfFirstSlot: {x: -3.5, y: 0, z: -6.5}
+  _shelfSlotOffset: {x: 1.75, y: 0, z: 0}
+  _queueFirstSlots:
+  - {x: -2.5, y: 0, z: -8.5}
+  - {x: 0, y: 0, z: -8.5}
+  - {x: 2.5, y: 0, z: -8.5}
+  _slotsPerQueue: 5
+  _queueSlotOffset: {x: 0, y: 0, z: -1.5}
   _pathBackLeft: {fileID: 1544695923}
   _pathBackRight: {fileID: 1738779457}
   _pathTopRight: {fileID: 988732303}
@@ -1763,6 +1743,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d192ef06bc16a28489b2e8e93c164199, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::GridRenderer
+  _cubeMesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+  _normalMaterial: {fileID: 2100000, guid: 5b3088cfe9388ef4298ab081b1ee318c, type: 2}
+  _stoneMaterial: {fileID: 0}
 --- !u!4 &1616825158
 Transform:
   m_ObjectHideFlags: 0
@@ -2184,7 +2167,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &2107123626
 Transform:
   m_ObjectHideFlags: 0

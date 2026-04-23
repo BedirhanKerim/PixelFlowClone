@@ -16,17 +16,13 @@ public class LevelLoader : MonoBehaviour
     [Inject] private QueueService _queue;
     [Inject] private PigPathService _pathService;
 
-    [System.Serializable]
-    public class QueueSlotSet
-    {
-        public Transform[] Points;
-    }
-
-    [SerializeField] private Transform _shelfRoot;
-    [SerializeField] private Transform _queueRoot;
-    [SerializeField] private Transform _activePigsRoot;
-    [SerializeField] private Transform[] _shelfSlotPoints;
-    [SerializeField] private QueueSlotSet[] _queueSlotSets = new QueueSlotSet[QueueService.QueueCount];
+    private Transform _shelfRoot;
+    private Transform _queueRoot;
+    [SerializeField] private Vector3 _shelfFirstSlot;
+    [SerializeField] private Vector3 _shelfSlotOffset = new Vector3(1.75f, 0f, 0f);
+    [SerializeField] private Vector3[] _queueFirstSlots = new Vector3[QueueService.QueueCount];
+    [SerializeField] private int _slotsPerQueue = 5;
+    [SerializeField] private Vector3 _queueSlotOffset = new Vector3(0f, 0f, -1.5f);
     [SerializeField] private Transform _pathBackLeft;
     [SerializeField] private Transform _pathBackRight;
     [SerializeField] private Transform _pathTopRight;
@@ -102,7 +98,6 @@ public class LevelLoader : MonoBehaviour
     {
         if (_shelfRoot == null) _shelfRoot = CreateRoot("ShelfRoot");
         if (_queueRoot == null) _queueRoot = CreateRoot("QueueRoot");
-        if (_activePigsRoot == null) _activePigsRoot = CreateRoot("ActivePigsRoot");
     }
 
     private Transform CreateRoot(string name)
@@ -147,7 +142,6 @@ public class LevelLoader : MonoBehaviour
     {
         ClearChildren(_shelfRoot);
         ClearChildren(_queueRoot);
-        ClearChildren(_activePigsRoot);
     }
 
     private static void ClearChildren(Transform root)
@@ -161,15 +155,9 @@ public class LevelLoader : MonoBehaviour
 
     private void SpawnShelfPigs(LevelData data)
     {
-        if (_shelfSlotPoints == null || _shelfSlotPoints.Length < _config.ShelfSlotCount)
-        {
-            Debug.LogError($"LevelLoader: ShelfSlotPoints needs {_config.ShelfSlotCount} transforms assigned.");
-            return;
-        }
-
         for (int i = 0; i < _config.ShelfSlotCount; i++)
         {
-            _shelf.SetSlotPosition(i, _shelfSlotPoints[i].position);
+            _shelf.SetSlotPosition(i, _shelfFirstSlot + _shelfSlotOffset * i);
         }
 
         int count = Mathf.Min(_config.ShelfSlotCount, data.ShelfPigs?.Length ?? 0);
@@ -187,12 +175,16 @@ public class LevelLoader : MonoBehaviour
     {
         for (int q = 0; q < QueueService.QueueCount; q++)
         {
-            var points = (_queueSlotSets != null && q < _queueSlotSets.Length) ? _queueSlotSets[q]?.Points : null;
-            if (points == null) points = System.Array.Empty<Transform>();
-            var positions = new Vector3[points.Length];
-            for (int i = 0; i < points.Length; i++)
+            if (_queueFirstSlots == null || q >= _queueFirstSlots.Length || _slotsPerQueue <= 0)
             {
-                positions[i] = points[i] != null ? points[i].position : Vector3.zero;
+                _queue.InitializeQueueSlots(q, System.Array.Empty<Vector3>());
+                continue;
+            }
+            Vector3 first = _queueFirstSlots[q];
+            var positions = new Vector3[_slotsPerQueue];
+            for (int i = 0; i < _slotsPerQueue; i++)
+            {
+                positions[i] = first + _queueSlotOffset * i;
             }
             _queue.InitializeQueueSlots(q, positions);
         }
@@ -210,13 +202,10 @@ public class LevelLoader : MonoBehaviour
         for (int i = 0; i < shuffled.Count; i++)
         {
             int q = i % QueueService.QueueCount;
-            int cap = (_queueSlotSets != null && q < _queueSlotSets.Length && _queueSlotSets[q]?.Points != null)
-                ? _queueSlotSets[q].Points.Length
-                : 0;
 
-            if (perQueueCounts[q] >= cap)
+            if (perQueueCounts[q] >= _slotsPerQueue)
             {
-                Debug.LogError($"LevelLoader: queue {q} has no more slot for pig {i}. Add more slot points.");
+                Debug.LogError($"LevelLoader: queue {q} has no more slots for pig {i}. Increase SlotsPerQueue.");
                 continue;
             }
 

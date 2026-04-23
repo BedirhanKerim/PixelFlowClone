@@ -1,9 +1,9 @@
-using DG.Tweening;
 using UnityEngine;
 using VContainer;
 
 public class GridRenderer : MonoBehaviour
 {
+    private const int InstanceBatchLimit = 1023;
     private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
     private static readonly Color PlaceholderTint = new Color(0.3f, 0.3f, 0.3f, 1f);
     private static readonly Color StoneColor = new Color(0.18f, 0.18f, 0.22f, 1f);
@@ -12,24 +12,41 @@ public class GridRenderer : MonoBehaviour
     [Inject] private GameConfig _config;
     [Inject] private GridModel _model;
 
-    private Mesh _cubeMesh;
-    private Material _sharedNormalMat;
-    private Material _sharedStoneMat;
-    private Transform _cubesRoot;
-    private Transform[] _cubes;
-    private MeshRenderer[] _renderers;
-    private MaterialPropertyBlock _mpb;
+    [SerializeField] private Mesh _cubeMesh;
+    [SerializeField] private Material _normalMaterial;
+    [SerializeField] private Material _stoneMaterial;
+
+    private struct CubeState
+    {
+        public Vector3 Position;
+        public Color PlaceholderColor;
+        public Color FinalColor;
+        public float PopInDelay;
+        public float PopInElapsed;
+        public float DestroyElapsed;
+        public bool IsStone;
+        public bool IsDestroying;
+        public bool IsDead;
+    }
+
+    private CubeState[] _states;
+    private Matrix4x4[] _normalMatrices;
+    private Vector4[] _normalColors;
+    private Matrix4x4[] _stoneMatrices;
+    private readonly Matrix4x4[] _batchMatrices = new Matrix4x4[InstanceBatchLimit];
+    private readonly Vector4[] _batchColors = new Vector4[InstanceBatchLimit];
+    private int _totalCells;
+    private int _cellCount;
     private float _cubeSize;
     private Vector3 _originOffset;
+    private MaterialPropertyBlock _mpb;
+
+    private bool _hasGrid;
 
     private void Awake()
     {
         _mpb = new MaterialPropertyBlock();
-        _cubeMesh = BuildCubeMesh();
-        _sharedNormalMat = CreateInstancedMaterial();
-        _sharedStoneMat = CreateInstancedMaterial();
-        _cubesRoot = new GameObject("Cubes").transform;
-        _cubesRoot.SetParent(transform, false);
+        if (_cubeMesh == null) _cubeMesh = BuildDefaultCubeMesh();
     }
 
     private void OnEnable()
@@ -45,9 +62,8 @@ public class GridRenderer : MonoBehaviour
     }
 
     public float CubeSize => _cubeSize;
-    public Vector3 GetCellWorldPos(CellAddress c) => _originOffset + new Vector3(c.X * _cubeSize, 0f, c.Y * _cubeSize);
-    public Transform GetCubeTransform(CellAddress c) => _cubes != null ? _cubes[_model.Index(c)] : null;
     public Vector3 OriginOffset => _originOffset;
+    public Vector3 GetCellWorldPos(CellAddress c) => _originOffset + new Vector3(c.X * _cubeSize, 0f, c.Y * _cubeSize);
 
     private void OnLevelLoaded(ref LevelLoaded e)
     {
@@ -57,118 +73,172 @@ public class GridRenderer : MonoBehaviour
     private void OnCellPainted(ref CellPainted e)
     {
         int idx = _model.Index(e.Cell);
-        var cubeTransform = _cubes[idx];
-        var renderer = _renderers[idx];
-        if (cubeTransform == null || renderer == null) return;
+        if (idx < 0 || idx >= _states.Length) return;
+        ref var state = ref _states[idx];
+        if (state.IsDead) return;
 
         _model.MarkDestroyed(e.Cell);
-
-        var color = (Color)_model.PaletteColor(e.ColorIndex);
-        renderer.GetPropertyBlock(_mpb);
-        _mpb.SetColor(BaseColorId, color);
-        renderer.SetPropertyBlock(_mpb);
-
-        _cubes[idx] = null;
-        _renderers[idx] = null;
-
-        var sequence = DOTween.Sequence();
-        sequence.Append(cubeTransform.DOScale(Vector3.zero, _config.CellPaintDuration).SetEase(Ease.InBack));
-        sequence.Join(cubeTransform.DOLocalRotate(new Vector3(180f, 180f, 0f), _config.CellPaintDuration, RotateMode.FastBeyond360));
-        sequence.OnComplete(() =>
-        {
-            if (cubeTransform != null) Destroy(cubeTransform.gameObject);
-        });
+        state.FinalColor = _model.PaletteColor(e.ColorIndex);
+        state.IsDestroying = true;
+        state.DestroyElapsed = 0f;
     }
 
     private void BuildGrid(LevelData data)
     {
-        ClearCubes();
+        _cellCount = data.GridSize.x * data.GridSize.y;
+        _totalCells = _cellCount;
+        _states = new CubeState[_cellCount];
 
-        var size = data.GridSize;
-        int total = size.x * size.y;
-        _cubes = new Transform[total];
-        _renderers = new MeshRenderer[total];
-
-        _cubeSize = _config.BoardWorldWidth / Mathf.Max(size.x, size.y);
-        float halfBoardX = (size.x - 1) * _cubeSize * 0.5f;
-        float halfBoardZ = (size.y - 1) * _cubeSize * 0.5f;
+        _cubeSize = _config.BoardWorldWidth / Mathf.Max(data.GridSize.x, data.GridSize.y);
+        float halfBoardX = (data.GridSize.x - 1) * _cubeSize * 0.5f;
+        float halfBoardZ = (data.GridSize.y - 1) * _cubeSize * 0.5f;
         _originOffset = new Vector3(-halfBoardX, 0f, -halfBoardZ);
 
-        for (int y = 0; y < size.y; y++)
+        int normalBuffer = 0;
+        int stoneBuffer = 0;
+        for (int i = 0; i < _cellCount; i++)
         {
-            for (int x = 0; x < size.x; x++)
+            var type = data.CellTypes[i];
+            if (type == CellType.Empty) { _states[i].IsDead = true; continue; }
+
+            int x = i % data.GridSize.x;
+            int y = i / data.GridSize.x;
+            var pos = _originOffset + new Vector3(x * _cubeSize, 0f, y * _cubeSize);
+
+            _states[i] = new CubeState
             {
-                int i = y * size.x + x;
-                CellType type = data.CellTypes[i];
-                if (type == CellType.Empty) continue;
+                Position = pos,
+                PopInDelay = i * _config.CubePopInStagger,
+                PopInElapsed = 0f,
+                IsStone = type == CellType.Stone,
+                IsDead = false,
+                IsDestroying = false,
+                DestroyElapsed = 0f,
+                FinalColor = data.PaletteColors[data.CellColorIndices[i]],
+                PlaceholderColor = type == CellType.Stone
+                    ? StoneColor
+                    : BlendToPlaceholder(data.PaletteColors[data.CellColorIndices[i]])
+            };
 
-                byte colorIndex = data.CellColorIndices[i];
-                Color target = data.PaletteColors[colorIndex];
+            if (_states[i].IsStone) stoneBuffer++;
+            else normalBuffer++;
+        }
 
-                var go = new GameObject($"Cell_{x}_{y}");
-                go.transform.SetParent(_cubesRoot, false);
-                go.transform.localPosition = _originOffset + new Vector3(x * _cubeSize, 0f, y * _cubeSize);
-                go.transform.localScale = Vector3.zero;
+        _normalMatrices = new Matrix4x4[normalBuffer];
+        _normalColors = new Vector4[normalBuffer];
+        _stoneMatrices = new Matrix4x4[stoneBuffer];
+        _hasGrid = true;
+    }
 
-                go.AddComponent<MeshFilter>().sharedMesh = _cubeMesh;
-                var mr = go.AddComponent<MeshRenderer>();
-                mr.sharedMaterial = type == CellType.Stone ? _sharedStoneMat : _sharedNormalMat;
-                mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-                mr.receiveShadows = false;
+    private void LateUpdate()
+    {
+        if (!_hasGrid || _states == null) return;
 
-                Color initial = type == CellType.Stone ? StoneColor : BlendToPlaceholder(target);
-                mr.GetPropertyBlock(_mpb);
-                _mpb.SetColor(BaseColorId, initial);
-                mr.SetPropertyBlock(_mpb);
+        int normalCount = 0;
+        int stoneCount = 0;
+        float popDur = _config.CubePopInDuration;
+        float paintDur = _config.CellPaintDuration;
+        float dt = Time.deltaTime;
+        Vector3 targetScale = Vector3.one * _cubeSize * 0.95f;
 
-                _cubes[i] = go.transform;
-                _renderers[i] = mr;
+        for (int i = 0; i < _cellCount; i++)
+        {
+            ref var s = ref _states[i];
+            if (s.IsDead) continue;
+
+            if (s.PopInElapsed < popDur + s.PopInDelay)
+            {
+                s.PopInElapsed += dt;
+            }
+
+            float popT = Mathf.Clamp01((s.PopInElapsed - s.PopInDelay) / Mathf.Max(popDur, 0.0001f));
+            popT = popT <= 0f ? 0f : EaseOutBack(popT);
+
+            Vector3 scale = targetScale * popT;
+            Quaternion rot = Quaternion.identity;
+            Color color = s.IsStone ? StoneColor : s.PlaceholderColor;
+
+            if (s.IsDestroying)
+            {
+                s.DestroyElapsed += dt;
+                float dt01 = Mathf.Clamp01(s.DestroyElapsed / Mathf.Max(paintDur, 0.0001f));
+                color = s.FinalColor;
+                scale = targetScale * EaseInBack(1f - dt01);
+                rot = Quaternion.Euler(dt01 * 180f, dt01 * 180f, 0f);
+
+                if (dt01 >= 1f)
+                {
+                    s.IsDead = true;
+                    continue;
+                }
+            }
+
+            var matrix = Matrix4x4.TRS(s.Position, rot, scale);
+            if (s.IsStone)
+            {
+                if (stoneCount < _stoneMatrices.Length) _stoneMatrices[stoneCount++] = matrix;
+            }
+            else
+            {
+                if (normalCount < _normalMatrices.Length)
+                {
+                    _normalMatrices[normalCount] = matrix;
+                    _normalColors[normalCount] = color;
+                    normalCount++;
+                }
             }
         }
 
-        AnimatePopIn();
+        DrawInstances(normalCount, stoneCount);
     }
 
-    private void AnimatePopIn()
+    private void DrawInstances(int normalCount, int stoneCount)
     {
-        Vector3 scale = Vector3.one * _cubeSize * 0.95f;
-        int stagger = 0;
-        for (int i = 0; i < _cubes.Length; i++)
+        if (normalCount > 0 && _normalMaterial != null)
         {
-            if (_cubes[i] == null) continue;
-            _cubes[i].DOScale(scale, _config.CubePopInDuration)
-                .SetEase(Ease.OutBack)
-                .SetDelay(stagger++ * _config.CubePopInStagger);
-        }
-    }
-
-    private void ClearCubes()
-    {
-        if (_cubes == null) return;
-        for (int i = 0; i < _cubes.Length; i++)
-        {
-            if (_cubes[i] != null)
+            int drawn = 0;
+            while (drawn < normalCount)
             {
-                _cubes[i].DOKill();
-                Destroy(_cubes[i].gameObject);
+                int batch = Mathf.Min(InstanceBatchLimit, normalCount - drawn);
+                System.Array.Copy(_normalMatrices, drawn, _batchMatrices, 0, batch);
+                System.Array.Copy(_normalColors, drawn, _batchColors, 0, batch);
+
+                _mpb.Clear();
+                _mpb.SetVectorArray(BaseColorId, _batchColors);
+                Graphics.DrawMeshInstanced(_cubeMesh, 0, _normalMaterial, _batchMatrices, batch, _mpb);
+                drawn += batch;
             }
         }
-        _cubes = null;
-        _renderers = null;
+
+        if (stoneCount > 0 && _stoneMaterial != null)
+        {
+            int drawn = 0;
+            while (drawn < stoneCount)
+            {
+                int batch = Mathf.Min(InstanceBatchLimit, stoneCount - drawn);
+                System.Array.Copy(_stoneMatrices, drawn, _batchMatrices, 0, batch);
+                Graphics.DrawMeshInstanced(_cubeMesh, 0, _stoneMaterial, _batchMatrices, batch);
+                drawn += batch;
+            }
+        }
     }
 
-    private Color BlendToPlaceholder(Color target) => Color.Lerp(target, PlaceholderTint, 0.72f);
+    private static Color BlendToPlaceholder(Color target) => target;
 
-    private Material CreateInstancedMaterial()
+    private static float EaseOutBack(float t)
     {
-        var shader = Shader.Find("Universal Render Pipeline/Lit");
-        var mat = new Material(shader) { enableInstancing = true };
-        mat.SetFloat("_Smoothness", 0.15f);
-        mat.SetFloat("_Metallic", 0f);
-        return mat;
+        const float c = 1.70158f;
+        t -= 1f;
+        return 1f + (c + 1f) * t * t * t + c * t * t;
     }
 
-    private static Mesh BuildCubeMesh()
+    private static float EaseInBack(float t)
+    {
+        const float c = 1.70158f;
+        return (c + 1f) * t * t * t - c * t * t;
+    }
+
+    private static Mesh BuildDefaultCubeMesh()
     {
         var proto = GameObject.CreatePrimitive(PrimitiveType.Cube);
         var mesh = proto.GetComponent<MeshFilter>().sharedMesh;
