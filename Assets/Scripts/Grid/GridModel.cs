@@ -71,8 +71,9 @@ public class GridModel
 
     public bool IsLevelComplete() => _paintedCount >= _normalCellCount;
 
-    /// Walks cells from startCell in direction. Returns first unpainted normal cell whose target
-    /// color matches. Stone blocks the line. Empty and painted cells are passed through.
+    /// Walks cells from startCell in direction. Returns the first visible cube only if its target
+    /// color matches. Targeted (painted but not yet destroyed), stone, or wrong-color cubes block
+    /// the line of sight. Empty cells (original or destroyed) are passed through.
     public bool TryFindFirstMatch(CellAddress startCell, Vector2Int direction, byte colorIndex, out CellAddress hit)
     {
         hit = default;
@@ -81,15 +82,30 @@ public class GridModel
         while (InBounds(x, y))
         {
             int i = Index(x, y);
-            if (_types[i] == CellType.Stone) return false;
-            if (_types[i] == CellType.Normal && !_painted[i] && _targetColors[i] == colorIndex)
+            var type = _types[i];
+
+            if (type == CellType.Empty)
+            {
+                x += direction.x;
+                y += direction.y;
+                continue;
+            }
+
+            if (_painted[i]) return false;
+            if (type == CellType.Stone) return false;
+
+            if (_targetColors[i] == colorIndex)
             {
                 hit = new CellAddress(x, y);
                 return true;
             }
-            x += direction.x;
-            y += direction.y;
+            return false;
         }
         return false;
+    }
+
+    public void MarkDestroyed(CellAddress c)
+    {
+        _types[Index(c)] = CellType.Empty;
     }
 }

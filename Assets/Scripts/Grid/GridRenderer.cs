@@ -57,12 +57,27 @@ public class GridRenderer : MonoBehaviour
     private void OnCellPainted(ref CellPainted e)
     {
         int idx = _model.Index(e.Cell);
-        if (_renderers[idx] == null) return;
+        var cubeTransform = _cubes[idx];
+        var renderer = _renderers[idx];
+        if (cubeTransform == null || renderer == null) return;
+
+        _model.MarkDestroyed(e.Cell);
+
         var color = (Color)_model.PaletteColor(e.ColorIndex);
-        _renderers[idx].GetPropertyBlock(_mpb);
+        renderer.GetPropertyBlock(_mpb);
         _mpb.SetColor(BaseColorId, color);
-        _renderers[idx].SetPropertyBlock(_mpb);
-        _cubes[idx].DOPunchScale(Vector3.one * 0.25f, _config.CellPaintDuration, 6, 0.5f);
+        renderer.SetPropertyBlock(_mpb);
+
+        _cubes[idx] = null;
+        _renderers[idx] = null;
+
+        var sequence = DOTween.Sequence();
+        sequence.Append(cubeTransform.DOScale(Vector3.zero, _config.CellPaintDuration).SetEase(Ease.InBack));
+        sequence.Join(cubeTransform.DOLocalRotate(new Vector3(180f, 180f, 0f), _config.CellPaintDuration, RotateMode.FastBeyond360));
+        sequence.OnComplete(() =>
+        {
+            if (cubeTransform != null) Destroy(cubeTransform.gameObject);
+        });
     }
 
     private void BuildGrid(LevelData data)

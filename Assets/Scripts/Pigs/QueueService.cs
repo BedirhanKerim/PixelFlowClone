@@ -49,6 +49,7 @@ public class QueueService
     public void Enqueue(int queueIndex, PigEntity pig)
     {
         _queues[queueIndex].Add(pig);
+        pig.SetInteractable(_queues[queueIndex].Count == 1);
     }
 
     public Vector3 GetSlotPosition(int queueIndex, int slotIndex)
@@ -75,6 +76,7 @@ public class QueueService
             if (idx < 0) continue;
             _queues[q].RemoveAt(idx);
             ShiftQueueForward(q, idx);
+            if (_queues[q].Count > 0) _queues[q][0].SetInteractable(true);
             return true;
         }
         return false;

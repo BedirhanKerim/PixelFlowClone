@@ -13,9 +13,9 @@ public class ShootingService : MonoBehaviour
     {
         if (!pig.HasAmmo) return false;
         if (!_model.TryFindFirstMatch(lineStart, direction, pig.ColorIndex, out var target)) return false;
+        if (!_model.TryPaint(target, pig.ColorIndex)) return false;
 
         pig.ConsumeAmmo();
-        _model.TryPaint(target, pig.ColorIndex);
 
         var bullet = _bulletFactory.Get();
         Vector3 from = pig.transform.position;

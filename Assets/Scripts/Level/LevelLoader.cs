@@ -27,6 +27,11 @@ public class LevelLoader : MonoBehaviour
     [SerializeField] private Transform _activePigsRoot;
     [SerializeField] private Transform[] _shelfSlotPoints;
     [SerializeField] private QueueSlotSet[] _queueSlotSets = new QueueSlotSet[QueueService.QueueCount];
+    [SerializeField] private Transform _pathBackLeft;
+    [SerializeField] private Transform _pathBackRight;
+    [SerializeField] private Transform _pathTopRight;
+    [SerializeField] private Transform _pathTopLeft;
+    [SerializeField] private Transform _pathFinish;
 
     private PerimeterTrack _track;
     private CancellationTokenSource _cts;
@@ -127,8 +132,12 @@ public class LevelLoader : MonoBehaviour
         _eventBus.Raise(new LevelLoadRequested { LevelIndex = index });
         _eventBus.Raise(new LevelLoaded { Data = data });
 
-        float cubeSize = _config.BoardWorldWidth / Mathf.Max(data.GridSize.x, data.GridSize.y);
-        _track.Rebuild(data.GridSize, cubeSize, _config.PerimeterOffset, _config.PerimeterHeight);
+        if (_pathBackLeft == null || _pathBackRight == null || _pathTopRight == null || _pathTopLeft == null || _pathFinish == null)
+        {
+            Debug.LogError("LevelLoader: assign all 5 path transforms (BackLeft, BackRight, TopRight, TopLeft, Finish).");
+            return;
+        }
+        _track.Rebuild(data.GridSize, _pathBackLeft.position, _pathBackRight.position, _pathTopRight.position, _pathTopLeft.position, _pathFinish.position);
 
         SpawnShelfPigs(data);
         SpawnQueuePigs(data);
@@ -190,34 +199,33 @@ public class LevelLoader : MonoBehaviour
 
         if (data.QueuePigs == null || data.QueuePigs.Length == 0) return;
 
-        var perQueueCounts = new int[QueueService.QueueCount];
-        var candidates = new System.Collections.Generic.List<int>(QueueService.QueueCount);
-
-        for (int i = 0; i < data.QueuePigs.Length; i++)
+        var shuffled = new System.Collections.Generic.List<PigConfig>(data.QueuePigs);
+        for (int i = shuffled.Count - 1; i > 0; i--)
         {
-            var cfg = data.QueuePigs[i];
+            int j = Random.Range(0, i + 1);
+            (shuffled[i], shuffled[j]) = (shuffled[j], shuffled[i]);
+        }
 
-            candidates.Clear();
-            for (int q = 0; q < QueueService.QueueCount; q++)
-            {
-                int cap = (_queueSlotSets != null && q < _queueSlotSets.Length && _queueSlotSets[q]?.Points != null)
-                    ? _queueSlotSets[q].Points.Length
-                    : 0;
-                if (perQueueCounts[q] < cap) candidates.Add(q);
-            }
+        var perQueueCounts = new int[QueueService.QueueCount];
+        for (int i = 0; i < shuffled.Count; i++)
+        {
+            int q = i % QueueService.QueueCount;
+            int cap = (_queueSlotSets != null && q < _queueSlotSets.Length && _queueSlotSets[q]?.Points != null)
+                ? _queueSlotSets[q].Points.Length
+                : 0;
 
-            if (candidates.Count == 0)
+            if (perQueueCounts[q] >= cap)
             {
-                Debug.LogError($"LevelLoader: no queue has free slot for pig {i}. Add more slot points.");
+                Debug.LogError($"LevelLoader: queue {q} has no more slot for pig {i}. Add more slot points.");
                 continue;
             }
 
-            int chosen = candidates[Random.Range(0, candidates.Count)];
+            var cfg = shuffled[i];
             Color32 color = data.PaletteColors[cfg.ColorIndex];
             var pig = _pigFactory.Create(cfg.ColorIndex, cfg.Ammo, color, PigOrigin.Queue, _queueRoot);
-            pig.transform.position = _queue.GetSlotPosition(chosen, perQueueCounts[chosen]);
-            _queue.Enqueue(chosen, pig);
-            perQueueCounts[chosen]++;
+            pig.transform.position = _queue.GetSlotPosition(q, perQueueCounts[q]);
+            _queue.Enqueue(q, pig);
+            perQueueCounts[q]++;
         }
     }
 }

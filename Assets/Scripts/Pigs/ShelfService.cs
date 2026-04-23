@@ -35,6 +35,7 @@ public class ShelfService
         if (_slots[index] != null || _reserved[index]) return false;
         _slots[index] = pig;
         pig.ShelfSlotIndex = index;
+        pig.SetInteractable(true);
         return true;
     }
 
@@ -42,6 +43,7 @@ public class ShelfService
     {
         var pig = _slots[index];
         if (pig == null) return;
+        pig.SetInteractable(false);
         _slots[index] = null;
         _reserved[index] = true;
     }
@@ -51,6 +53,7 @@ public class ShelfService
         if (pig.ShelfSlotIndex < 0) return;
         _slots[pig.ShelfSlotIndex] = pig;
         _reserved[pig.ShelfSlotIndex] = false;
+        pig.SetInteractable(true);
     }
 
     public void ReleaseReservation(int index)

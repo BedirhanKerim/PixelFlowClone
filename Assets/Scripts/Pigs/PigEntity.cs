@@ -5,9 +5,20 @@ public class PigEntity : MonoBehaviour, IInteractable
 {
     private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
     private const int MaxBodyRenderers = 2;
+    private const float DimFactor = 0.5f;
 
     [SerializeField] private MeshRenderer[] _bodyRenderers = new MeshRenderer[MaxBodyRenderers];
     [SerializeField] private TextMeshPro _ammoText;
+    [SerializeField] private Transform _meshTransform;
+
+    public Transform MeshTransform => _meshTransform != null ? _meshTransform : transform;
+
+    public static readonly Quaternion IdleLocalRotation = Quaternion.Euler(0f, 90f, 0f);
+
+    public void ResetMeshToIdle()
+    {
+        MeshTransform.localRotation = IdleLocalRotation;
+    }
 
 #if UNITY_EDITOR
     private void OnValidate()
@@ -31,6 +42,7 @@ public class PigEntity : MonoBehaviour, IInteractable
     public PigState State { get; set; }
     public int ShelfSlotIndex { get; set; } = -1;
     public Color32 TintColor { get; private set; }
+    public bool IsInteractable { get; private set; }
 
     public int CurrentSegment { get; set; }
     public float CurrentSegmentProgress { get; set; }
@@ -60,21 +72,37 @@ public class PigEntity : MonoBehaviour, IInteractable
         Origin = origin;
         State = PigState.Idle;
         TintColor = color;
+        IsInteractable = false;
 
-        _mpb ??= new MaterialPropertyBlock();
-        if (_bodyRenderers != null)
-        {
-            for (int i = 0; i < _bodyRenderers.Length; i++)
-            {
-                var r = _bodyRenderers[i];
-                if (r == null) continue;
-                r.GetPropertyBlock(_mpb);
-                _mpb.SetColor(BaseColorId, color);
-                r.SetPropertyBlock(_mpb);
-            }
-        }
-
+        ResetMeshToIdle();
+        ApplyCurrentTint();
         RefreshAmmoText();
+    }
+
+    public void SetInteractable(bool value)
+    {
+        if (IsInteractable == value) return;
+        IsInteractable = value;
+        ApplyCurrentTint();
+    }
+
+    private void ApplyCurrentTint()
+    {
+        _mpb ??= new MaterialPropertyBlock();
+        Color baseColor = TintColor;
+        Color applied = IsInteractable
+            ? baseColor
+            : new Color(baseColor.r * DimFactor, baseColor.g * DimFactor, baseColor.b * DimFactor, baseColor.a);
+
+        if (_bodyRenderers == null) return;
+        for (int i = 0; i < _bodyRenderers.Length; i++)
+        {
+            var r = _bodyRenderers[i];
+            if (r == null) continue;
+            r.GetPropertyBlock(_mpb);
+            _mpb.SetColor(BaseColorId, applied);
+            r.SetPropertyBlock(_mpb);
+        }
     }
 
     public void ConsumeAmmo()

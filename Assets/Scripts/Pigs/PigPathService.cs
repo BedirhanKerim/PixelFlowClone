@@ -78,15 +78,17 @@ public class PigPathService : MonoBehaviour
             pig.CurrentSegmentProgress = 0f;
             _eventBus.Raise(new PigEnteredPath { PigId = pig.Id, Entry = entry });
 
-            float segmentDuration = _config.PigLapDuration * 0.25f;
+            float segmentDuration = _config.PigLapDuration / PerimeterTrack.FiringSegmentCount;
             float fireCooldown = 0f;
             bool depleted = false;
 
-            for (int seg = 0; seg < 4 && !depleted; seg++)
+            for (int seg = 0; seg < PerimeterTrack.FiringSegmentCount && !depleted; seg++)
             {
                 pig.CurrentSegment = seg;
                 var targetRot = _track.SegmentRotations[seg];
-                var nextRot = _track.SegmentRotations[(seg + 1) % 4];
+                var nextRot = seg + 1 < PerimeterTrack.FiringSegmentCount
+                    ? _track.SegmentRotations[seg + 1]
+                    : targetRot;
 
                 float elapsed = 0f;
                 while (elapsed < segmentDuration)

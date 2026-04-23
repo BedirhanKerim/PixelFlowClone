@@ -5,8 +5,6 @@ public class GameConfig : ScriptableObject
 {
     [Header("Board")]
     public float BoardWorldWidth = 10f;
-    public Vector3 CameraEuler = new Vector3(55f, 0f, 0f);
-    public float CameraDistanceMultiplier = 1.8f;
 
     [Header("Shelf / Queue")]
     public int ShelfSlotCount = 5;
