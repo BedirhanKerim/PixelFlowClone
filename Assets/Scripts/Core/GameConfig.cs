@@ -18,7 +18,6 @@ public class GameConfig : ScriptableObject
     public float CellPaintDuration = 0.15f;
     public float BulletFlightDuration = 0.12f;
     public float PigLapDuration = 6f;
-    public float LevelRevealDuration = 2f;
     public float LevelTransitionDuration = 0.6f;
 
     [Header("Ammo")]

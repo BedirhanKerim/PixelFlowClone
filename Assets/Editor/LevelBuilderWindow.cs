@@ -318,22 +318,20 @@ public class LevelBuilderWindow : EditorWindow
         for (byte c = 0; c < _palette.Count; c++)
         {
             int needed = counts[c];
-            if (needed == 0) continue;
-            int ammoPerPig = needed > 15 ? 20 : 10;
-            int pigCount = Mathf.CeilToInt((float)needed / ammoPerPig);
-            for (int p = 0; p < pigCount; p++)
+            while (needed > 0)
             {
-                all.Add(new PigConfig { ColorIndex = c, Ammo = ammoPerPig });
+                int ammo;
+                if (needed >= 20) ammo = 20;
+                else if (needed >= 10) ammo = 10;
+                else ammo = needed;
+
+                all.Add(new PigConfig { ColorIndex = c, Ammo = ammo });
+                needed -= ammo;
             }
         }
 
-        int shelfCount = Mathf.Min(5, all.Count);
-        level.ShelfPigs = new PigConfig[shelfCount];
-        for (int i = 0; i < shelfCount; i++) level.ShelfPigs[i] = all[i];
-
-        int queueCount = Mathf.Max(0, all.Count - shelfCount);
-        level.QueuePigs = new PigConfig[queueCount];
-        for (int i = 0; i < queueCount; i++) level.QueuePigs[i] = all[shelfCount + i];
+        level.ShelfPigs = System.Array.Empty<PigConfig>();
+        level.QueuePigs = all.ToArray();
     }
 
     private static void EnsureReadable(Texture2D tex)
