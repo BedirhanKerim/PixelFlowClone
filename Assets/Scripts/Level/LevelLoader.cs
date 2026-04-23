@@ -16,9 +16,17 @@ public class LevelLoader : MonoBehaviour
     [Inject] private QueueService _queue;
     [Inject] private PigPathService _pathService;
 
+    [System.Serializable]
+    public class QueueSlotSet
+    {
+        public Transform[] Points;
+    }
+
     [SerializeField] private Transform _shelfRoot;
     [SerializeField] private Transform _queueRoot;
     [SerializeField] private Transform _activePigsRoot;
+    [SerializeField] private Transform[] _shelfSlotPoints;
+    [SerializeField] private QueueSlotSet[] _queueSlotSets = new QueueSlotSet[QueueService.QueueCount];
 
     private PerimeterTrack _track;
     private CancellationTokenSource _cts;
@@ -54,7 +62,7 @@ public class LevelLoader : MonoBehaviour
 
     private void OnLevelCompleted(ref LevelCompleted e)
     {
-        AdvanceAfterDelay(_config.LevelRevealDuration + 1.0f).Forget();
+        AdvanceAfterDelay(0.5f).Forget();
     }
 
     private void OnLevelFailed(ref LevelFailed e)
@@ -65,9 +73,16 @@ public class LevelLoader : MonoBehaviour
     private async UniTaskVoid AdvanceAfterDelay(float delay)
     {
         await UniTask.Delay(System.TimeSpan.FromSeconds(delay), cancellationToken: _cts.Token);
-        if (_library != null && _library.Levels != null && _progress.CurrentIndex < _library.Levels.Length - 1)
+        if (_library != null && _library.Levels != null && _library.Levels.Length > 0)
         {
-            _progress.Advance();
+            if (_progress.CurrentIndex < _library.Levels.Length - 1)
+            {
+                _progress.Advance();
+            }
+            else
+            {
+                _progress.Reset();
+            }
         }
         LoadCurrent();
     }
@@ -137,54 +152,72 @@ public class LevelLoader : MonoBehaviour
 
     private void SpawnShelfPigs(LevelData data)
     {
-        int count = Mathf.Min(_config.ShelfSlotCount, data.ShelfPigs?.Length ?? 0);
-        float halfBoard = _config.BoardWorldWidth * 0.5f;
-        float halfGridZ = data.GridSize.y * 0.5f * (_config.BoardWorldWidth / Mathf.Max(data.GridSize.x, data.GridSize.y));
-        float spacing = _config.BoardWorldWidth / _config.ShelfSlotCount;
-        float startX = -halfBoard + spacing * 0.5f;
-        float z = -halfGridZ - _config.PerimeterOffset - 1.2f;
+        if (_shelfSlotPoints == null || _shelfSlotPoints.Length < _config.ShelfSlotCount)
+        {
+            Debug.LogError($"LevelLoader: ShelfSlotPoints needs {_config.ShelfSlotCount} transforms assigned.");
+            return;
+        }
 
+        for (int i = 0; i < _config.ShelfSlotCount; i++)
+        {
+            _shelf.SetSlotPosition(i, _shelfSlotPoints[i].position);
+        }
+
+        int count = Mathf.Min(_config.ShelfSlotCount, data.ShelfPigs?.Length ?? 0);
         for (int i = 0; i < count; i++)
         {
             var cfg = data.ShelfPigs[i];
             Color32 color = data.PaletteColors[cfg.ColorIndex];
             var pig = _pigFactory.Create(cfg.ColorIndex, cfg.Ammo, color, PigOrigin.Shelf, _shelfRoot);
-            var slotPos = new Vector3(startX + i * spacing, _config.PerimeterHeight, z);
-            pig.transform.position = slotPos;
-            _shelf.SetSlotPosition(i, slotPos);
+            pig.transform.position = _shelf.GetSlotPosition(i);
             _shelf.TryPlaceAtSlot(i, pig);
         }
     }
 
     private void SpawnQueuePigs(LevelData data)
     {
-        if (data.QueuePigs == null || data.QueuePigs.Length == 0)
+        for (int q = 0; q < QueueService.QueueCount; q++)
         {
-            _queue.InitializeSlots(System.Array.Empty<Vector3>());
-            return;
+            var points = (_queueSlotSets != null && q < _queueSlotSets.Length) ? _queueSlotSets[q]?.Points : null;
+            if (points == null) points = System.Array.Empty<Transform>();
+            var positions = new Vector3[points.Length];
+            for (int i = 0; i < points.Length; i++)
+            {
+                positions[i] = points[i] != null ? points[i].position : Vector3.zero;
+            }
+            _queue.InitializeQueueSlots(q, positions);
         }
 
-        int count = data.QueuePigs.Length;
-        float halfBoard = _config.BoardWorldWidth * 0.5f;
-        float halfGridZ = data.GridSize.y * 0.5f * (_config.BoardWorldWidth / Mathf.Max(data.GridSize.x, data.GridSize.y));
-        float spacing = _config.BoardWorldWidth / Mathf.Max(count, 1);
-        float startX = -halfBoard + spacing * 0.5f;
-        float z = -halfGridZ - _config.PerimeterOffset - 2.6f;
+        if (data.QueuePigs == null || data.QueuePigs.Length == 0) return;
 
-        var positions = new Vector3[count];
-        for (int i = 0; i < count; i++)
-        {
-            positions[i] = new Vector3(startX + i * spacing, _config.PerimeterHeight, z);
-        }
-        _queue.InitializeSlots(positions);
+        var perQueueCounts = new int[QueueService.QueueCount];
+        var candidates = new System.Collections.Generic.List<int>(QueueService.QueueCount);
 
-        for (int i = 0; i < count; i++)
+        for (int i = 0; i < data.QueuePigs.Length; i++)
         {
             var cfg = data.QueuePigs[i];
+
+            candidates.Clear();
+            for (int q = 0; q < QueueService.QueueCount; q++)
+            {
+                int cap = (_queueSlotSets != null && q < _queueSlotSets.Length && _queueSlotSets[q]?.Points != null)
+                    ? _queueSlotSets[q].Points.Length
+                    : 0;
+                if (perQueueCounts[q] < cap) candidates.Add(q);
+            }
+
+            if (candidates.Count == 0)
+            {
+                Debug.LogError($"LevelLoader: no queue has free slot for pig {i}. Add more slot points.");
+                continue;
+            }
+
+            int chosen = candidates[Random.Range(0, candidates.Count)];
             Color32 color = data.PaletteColors[cfg.ColorIndex];
             var pig = _pigFactory.Create(cfg.ColorIndex, cfg.Ammo, color, PigOrigin.Queue, _queueRoot);
-            pig.transform.position = positions[i];
-            _queue.Enqueue(pig);
+            pig.transform.position = _queue.GetSlotPosition(chosen, perQueueCounts[chosen]);
+            _queue.Enqueue(chosen, pig);
+            perQueueCounts[chosen]++;
         }
     }
 }
