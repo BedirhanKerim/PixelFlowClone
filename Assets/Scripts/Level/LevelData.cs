@@ -8,6 +8,8 @@ public class LevelData : ScriptableObject
     public Color32[] PaletteColors;
     public byte[] CellColorIndices;
     public CellType[] CellTypes;
+    public byte[] CellHealth;
+    public ManualBlock[] ManualBlocks;
     public PigConfig[] ShelfPigs;
     public PigConfig[] QueuePigs;
 }

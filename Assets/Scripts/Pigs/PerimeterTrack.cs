@@ -47,6 +47,8 @@ public class PerimeterTrack
 
     public Vector3 GetEntryPoint() => Corners[BackLeft];
 
+    public int GetSegmentCellCount(int segment) => (segment == 0 || segment == 2) ? _gridSize.x : _gridSize.y;
+
     public bool GetLineOfSight(int segment, float progress, out CellAddress start, out Vector2Int direction)
     {
         switch (segment)

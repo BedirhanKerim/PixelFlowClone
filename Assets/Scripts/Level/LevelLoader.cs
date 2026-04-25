@@ -21,7 +21,6 @@ public class LevelLoader : MonoBehaviour
     [SerializeField] private Vector3 _shelfFirstSlot;
     [SerializeField] private Vector3 _shelfSlotOffset = new Vector3(1.75f, 0f, 0f);
     [SerializeField] private Vector3[] _queueFirstSlots = new Vector3[QueueService.QueueCount];
-    [SerializeField] private int _slotsPerQueue = 5;
     [SerializeField] private Vector3 _queueSlotOffset = new Vector3(0f, 0f, -1.5f);
     [SerializeField] private Transform _pathBackLeft;
     [SerializeField] private Transform _pathBackRight;
@@ -175,18 +174,10 @@ public class LevelLoader : MonoBehaviour
     {
         for (int q = 0; q < QueueService.QueueCount; q++)
         {
-            if (_queueFirstSlots == null || q >= _queueFirstSlots.Length || _slotsPerQueue <= 0)
-            {
-                _queue.InitializeQueueSlots(q, System.Array.Empty<Vector3>());
-                continue;
-            }
-            Vector3 first = _queueFirstSlots[q];
-            var positions = new Vector3[_slotsPerQueue];
-            for (int i = 0; i < _slotsPerQueue; i++)
-            {
-                positions[i] = first + _queueSlotOffset * i;
-            }
-            _queue.InitializeQueueSlots(q, positions);
+            Vector3 first = _queueFirstSlots != null && q < _queueFirstSlots.Length
+                ? _queueFirstSlots[q]
+                : Vector3.zero;
+            _queue.InitializeQueueSlots(q, first, _queueSlotOffset);
         }
 
         if (data.QueuePigs == null || data.QueuePigs.Length == 0) return;
@@ -202,12 +193,6 @@ public class LevelLoader : MonoBehaviour
         for (int i = 0; i < shuffled.Count; i++)
         {
             int q = i % QueueService.QueueCount;
-
-            if (perQueueCounts[q] >= _slotsPerQueue)
-            {
-                Debug.LogError($"LevelLoader: queue {q} has no more slots for pig {i}. Increase SlotsPerQueue.");
-                continue;
-            }
 
             var cfg = shuffled[i];
             Color32 color = data.PaletteColors[cfg.ColorIndex];

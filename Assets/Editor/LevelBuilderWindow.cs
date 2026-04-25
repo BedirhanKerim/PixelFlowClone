@@ -20,6 +20,7 @@ public class LevelBuilderWindow : EditorWindow
     private byte[] _indices;
     private Texture2D _previewTex;
     private bool _previewDirty;
+    private readonly List<ManualBlock> _manualBlocks = new List<ManualBlock>();
 
     private static readonly Color32 EmptyPreviewColor = new Color32(28, 28, 32, 255);
 
@@ -38,6 +39,8 @@ public class LevelBuilderWindow : EditorWindow
         DrawImportSection();
         EditorGUILayout.Space();
         DrawPaletteSection();
+        EditorGUILayout.Space();
+        DrawArmoredBlocksSection();
         EditorGUILayout.Space();
         DrawPreviewSection();
         EditorGUILayout.Space();
@@ -117,9 +120,79 @@ public class LevelBuilderWindow : EditorWindow
         }
     }
 
+    private void DrawArmoredBlocksSection()
+    {
+        EditorGUILayout.LabelField("3. Armored Blocks", EditorStyles.boldLabel);
+
+        if (_palette == null || _palette.Count == 0)
+        {
+            EditorGUILayout.HelpBox("Import an image first — palette is needed for block colors.", MessageType.Info);
+            return;
+        }
+
+        if (GUILayout.Button("Add Block"))
+        {
+            _manualBlocks.Add(new ManualBlock
+            {
+                Origin = Vector2Int.zero,
+                Size = new Vector2Int(1, 1),
+                ColorIndex = 0,
+                Health = 3
+            });
+            _previewDirty = true;
+        }
+
+        int removeIndex = -1;
+        for (int i = 0; i < _manualBlocks.Count; i++)
+        {
+            var b = _manualBlocks[i];
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField($"#{i}", GUILayout.Width(28));
+
+            int x = EditorGUILayout.IntField(b.Origin.x, GUILayout.Width(36));
+            int y = EditorGUILayout.IntField(b.Origin.y, GUILayout.Width(36));
+            EditorGUILayout.LabelField("size", GUILayout.Width(28));
+            int w = EditorGUILayout.IntField(b.Size.x, GUILayout.Width(36));
+            int h = EditorGUILayout.IntField(b.Size.y, GUILayout.Width(36));
+
+            EditorGUILayout.LabelField("color", GUILayout.Width(36));
+            string[] options = new string[_palette.Count];
+            for (int p = 0; p < _palette.Count; p++) options[p] = $"#{p}";
+            int colorIdx = EditorGUILayout.Popup(Mathf.Clamp(b.ColorIndex, 0, _palette.Count - 1), options, GUILayout.Width(48));
+            var swatchRect = GUILayoutUtility.GetRect(18, 16, GUILayout.Width(18));
+            EditorGUI.DrawRect(swatchRect, _palette[Mathf.Clamp(colorIdx, 0, _palette.Count - 1)]);
+
+            EditorGUILayout.LabelField("hp", GUILayout.Width(20));
+            int hp = EditorGUILayout.IntField(b.Health, GUILayout.Width(36));
+
+            if (GUILayout.Button("×", GUILayout.Width(24))) removeIndex = i;
+            EditorGUILayout.EndHorizontal();
+
+            var newBlock = new ManualBlock
+            {
+                Origin = new Vector2Int(
+                    Mathf.Clamp(x, 0, _gridSize.x - 1),
+                    Mathf.Clamp(y, 0, _gridSize.y - 1)),
+                Size = new Vector2Int(Mathf.Max(1, w), Mathf.Max(1, h)),
+                ColorIndex = (byte)Mathf.Clamp(colorIdx, 0, _palette.Count - 1),
+                Health = (byte)Mathf.Clamp(hp, 1, 99)
+            };
+            if (newBlock.Origin != b.Origin || newBlock.Size != b.Size || newBlock.ColorIndex != b.ColorIndex || newBlock.Health != b.Health)
+            {
+                _manualBlocks[i] = newBlock;
+                _previewDirty = true;
+            }
+        }
+        if (removeIndex >= 0)
+        {
+            _manualBlocks.RemoveAt(removeIndex);
+            _previewDirty = true;
+        }
+    }
+
     private void DrawPreviewSection()
     {
-        EditorGUILayout.LabelField("3. Preview", EditorStyles.boldLabel);
+        EditorGUILayout.LabelField("4. Preview", EditorStyles.boldLabel);
 
         if (_previewTex == null)
         {
@@ -136,7 +209,7 @@ public class LevelBuilderWindow : EditorWindow
 
     private void DrawSaveSection()
     {
-        EditorGUILayout.LabelField("4. Save", EditorStyles.boldLabel);
+        EditorGUILayout.LabelField("5. Save", EditorStyles.boldLabel);
         _levelName = EditorGUILayout.TextField("Level Name", _levelName);
 
         GUI.enabled = _source != null && _indices != null && _palette != null && !string.IsNullOrWhiteSpace(_levelName);
@@ -277,6 +350,24 @@ public class LevelBuilderWindow : EditorWindow
                 pixels[i] = _sampledTypes[i] == CellType.Empty ? EmptyPreviewColor : _palette[_indices[i]];
             }
         }
+
+        for (int b = 0; b < _manualBlocks.Count; b++)
+        {
+            var block = _manualBlocks[b];
+            if (block.ColorIndex >= _palette.Count) continue;
+            Color32 blockColor = _palette[block.ColorIndex];
+            for (int by = 0; by < block.Size.y; by++)
+            {
+                for (int bx = 0; bx < block.Size.x; bx++)
+                {
+                    int gx = block.Origin.x + bx;
+                    int gy = block.Origin.y + by;
+                    if (gx < 0 || gx >= _gridSize.x || gy < 0 || gy >= _gridSize.y) continue;
+                    pixels[gy * _gridSize.x + gx] = blockColor;
+                }
+            }
+        }
+
         _previewTex.SetPixels32(pixels);
         _previewTex.Apply();
     }
@@ -287,8 +378,38 @@ public class LevelBuilderWindow : EditorWindow
         level.LevelName = _levelName;
         level.GridSize = _gridSize;
         level.PaletteColors = _palette.ToArray();
-        level.CellColorIndices = (byte[])_indices.Clone();
-        level.CellTypes = (CellType[])_sampledTypes.Clone();
+
+        var indices = (byte[])_indices.Clone();
+        var types = (CellType[])_sampledTypes.Clone();
+        var health = new byte[indices.Length];
+        for (int i = 0; i < health.Length; i++)
+        {
+            health[i] = types[i] == CellType.Normal ? (byte)1 : (byte)0;
+        }
+
+        for (int b = 0; b < _manualBlocks.Count; b++)
+        {
+            var block = _manualBlocks[b];
+            if (block.ColorIndex >= _palette.Count) continue;
+            for (int by = 0; by < block.Size.y; by++)
+            {
+                for (int bx = 0; bx < block.Size.x; bx++)
+                {
+                    int gx = block.Origin.x + bx;
+                    int gy = block.Origin.y + by;
+                    if (gx < 0 || gx >= _gridSize.x || gy < 0 || gy >= _gridSize.y) continue;
+                    int idx = gy * _gridSize.x + gx;
+                    indices[idx] = block.ColorIndex;
+                    types[idx] = CellType.HealthBlock;
+                    health[idx] = block.Health;
+                }
+            }
+        }
+
+        level.CellColorIndices = indices;
+        level.CellTypes = types;
+        level.CellHealth = health;
+        level.ManualBlocks = _manualBlocks.ToArray();
         AutoFillPigs(level);
 
         const string folder = "Assets/ScriptableObjects/Levels";
@@ -309,9 +430,12 @@ public class LevelBuilderWindow : EditorWindow
     private void AutoFillPigs(LevelData level)
     {
         var counts = new int[_palette.Count];
-        for (int i = 0; i < _indices.Length; i++)
+        for (int i = 0; i < level.CellTypes.Length; i++)
         {
-            if (_sampledTypes[i] == CellType.Normal) counts[_indices[i]]++;
+            var type = level.CellTypes[i];
+            byte color = level.CellColorIndices[i];
+            if (type == CellType.Normal) counts[color]++;
+            else if (type == CellType.HealthBlock) counts[color] += level.CellHealth[i];
         }
 
         var all = new List<PigConfig>();

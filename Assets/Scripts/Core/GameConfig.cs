@@ -13,6 +13,7 @@ public class GameConfig : ScriptableObject
     [Header("Tweens")]
     public float CubePopInDuration = 0.25f;
     public float CubePopInStagger = 0.01f;
+    public float GridPopInTotalDuration = 5f;
     public float CellPaintDuration = 0.15f;
     public float BulletFlightDuration = 0.12f;
     public float PigLapDuration = 6f;

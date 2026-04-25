@@ -2,5 +2,6 @@ public enum CellType : byte
 {
     Empty,
     Normal,
-    Stone
+    Stone,
+    HealthBlock
 }

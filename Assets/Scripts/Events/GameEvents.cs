@@ -22,3 +22,5 @@ public struct ShelfOverflowFail { public int PigId; }
 
 public struct ShotFired { public int PigId; public CellAddress Target; public byte ColorIndex; }
 public struct CellPainted { public CellAddress Cell; public byte ColorIndex; }
+public struct BlockDamaged { public int BlockId; public int RemainingHealth; }
+public struct BlockPainted { public int BlockId; public byte ColorIndex; }
