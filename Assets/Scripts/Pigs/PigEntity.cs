@@ -5,7 +5,7 @@ public class PigEntity : MonoBehaviour, IInteractable
 {
     private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
     private const int MaxBodyRenderers = 2;
-    private const float DimFactor = 0.5f;
+    private const float InactiveTextAlpha = 0.5f;
 
     [SerializeField] private MeshRenderer[] _bodyRenderers = new MeshRenderer[MaxBodyRenderers];
     [SerializeField] private TextMeshPro _ammoText;
@@ -75,34 +75,38 @@ public class PigEntity : MonoBehaviour, IInteractable
         IsInteractable = false;
 
         ResetMeshToIdle();
-        ApplyCurrentTint();
+        ApplyBodyTint();
         RefreshAmmoText();
+        ApplyAmmoTextAlpha();
     }
 
     public void SetInteractable(bool value)
     {
         if (IsInteractable == value) return;
         IsInteractable = value;
-        ApplyCurrentTint();
+        ApplyAmmoTextAlpha();
     }
 
-    private void ApplyCurrentTint()
+    private void ApplyBodyTint()
     {
         _mpb ??= new MaterialPropertyBlock();
-        Color baseColor = TintColor;
-        Color applied = IsInteractable
-            ? baseColor
-            : new Color(baseColor.r * DimFactor, baseColor.g * DimFactor, baseColor.b * DimFactor, baseColor.a);
-
         if (_bodyRenderers == null) return;
         for (int i = 0; i < _bodyRenderers.Length; i++)
         {
             var r = _bodyRenderers[i];
             if (r == null) continue;
             r.GetPropertyBlock(_mpb);
-            _mpb.SetColor(BaseColorId, applied);
+            _mpb.SetColor(BaseColorId, (Color)TintColor);
             r.SetPropertyBlock(_mpb);
         }
+    }
+
+    private void ApplyAmmoTextAlpha()
+    {
+        if (_ammoText == null) return;
+        var c = _ammoText.color;
+        c.a = IsInteractable ? 1f : InactiveTextAlpha;
+        _ammoText.color = c;
     }
 
     public void ConsumeAmmo()

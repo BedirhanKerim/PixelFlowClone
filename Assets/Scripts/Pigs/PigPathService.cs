@@ -18,8 +18,6 @@ public class PigPathService : MonoBehaviour
     private readonly Dictionary<int, CancellationTokenSource> _pigTokens = new Dictionary<int, CancellationTokenSource>();
     private CancellationTokenSource _lifetimeCts;
 
-    private const float FireInterval = 0.05f;
-
     public int ActivePigCount => _activePigs.Count;
 
     public void Bind(PerimeterTrack track) => _track = track;
@@ -79,7 +77,6 @@ public class PigPathService : MonoBehaviour
             _eventBus.Raise(new PigEnteredPath { PigId = pig.Id, Entry = entry });
 
             float segmentDuration = _config.PigLapDuration / PerimeterTrack.FiringSegmentCount;
-            float fireCooldown = 0f;
             bool depleted = false;
 
             for (int seg = 0; seg < PerimeterTrack.FiringSegmentCount && !depleted; seg++)
@@ -90,6 +87,8 @@ public class PigPathService : MonoBehaviour
                     ? _track.SegmentRotations[seg + 1]
                     : targetRot;
 
+                int totalCells = _track.GetSegmentCellCount(seg);
+                int lastFiredColIndex = -1;
                 float elapsed = 0f;
                 while (elapsed < segmentDuration)
                 {
@@ -108,17 +107,19 @@ public class PigPathService : MonoBehaviour
                     float rotBlend = Mathf.InverseLerp(0.8f, 1f, t);
                     pig.MeshTransform.rotation = Quaternion.Slerp(targetRot, nextRot, rotBlend);
 
-                    fireCooldown -= Time.deltaTime;
-                    if (fireCooldown <= 0f)
+                    int currentColIndex = Mathf.Clamp(Mathf.FloorToInt(t * totalCells), 0, totalCells - 1);
+                    while (lastFiredColIndex < currentColIndex)
                     {
-                        if (_track.GetLineOfSight(seg, t, out var startCell, out var dir))
+                        lastFiredColIndex++;
+                        if (!pig.HasAmmo) { depleted = true; break; }
+                        float syntheticProgress = (lastFiredColIndex + 0.5f) / totalCells;
+                        if (_track.GetLineOfSight(seg, syntheticProgress, out var startCell, out var dir))
                         {
-                            if (_shooting.TryFire(pig, startCell, dir))
-                            {
-                                fireCooldown = FireInterval;
-                            }
+                            _shooting.TryFire(pig, startCell, dir);
                         }
                     }
+                    if (depleted) break;
+
                     await UniTask.Yield(PlayerLoopTiming.Update, ct);
                 }
             }

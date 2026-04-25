@@ -8,16 +8,17 @@ public class QueueService
     private const float ShiftDuration = 0.25f;
 
     private readonly List<PigEntity>[] _queues;
-    private Vector3[][] _slotPositions;
+    private readonly Vector3[] _firstSlots;
+    private Vector3 _slotOffset;
+    private bool _hasOffset;
 
     public QueueService()
     {
         _queues = new List<PigEntity>[QueueCount];
-        _slotPositions = new Vector3[QueueCount][];
+        _firstSlots = new Vector3[QueueCount];
         for (int q = 0; q < QueueCount; q++)
         {
             _queues[q] = new List<PigEntity>();
-            _slotPositions[q] = System.Array.Empty<Vector3>();
         }
     }
 
@@ -36,13 +37,14 @@ public class QueueService
         for (int q = 0; q < QueueCount; q++)
         {
             _queues[q].Clear();
-            _slotPositions[q] = System.Array.Empty<Vector3>();
         }
     }
 
-    public void InitializeQueueSlots(int queueIndex, Vector3[] positions)
+    public void InitializeQueueSlots(int queueIndex, Vector3 firstSlot, Vector3 slotOffset)
     {
-        _slotPositions[queueIndex] = positions;
+        _firstSlots[queueIndex] = firstSlot;
+        _slotOffset = slotOffset;
+        _hasOffset = true;
         _queues[queueIndex].Clear();
     }
 
@@ -54,9 +56,8 @@ public class QueueService
 
     public Vector3 GetSlotPosition(int queueIndex, int slotIndex)
     {
-        var positions = _slotPositions[queueIndex];
-        if (positions.Length == 0) return Vector3.zero;
-        return positions[Mathf.Clamp(slotIndex, 0, positions.Length - 1)];
+        if (!_hasOffset) return Vector3.zero;
+        return _firstSlots[queueIndex] + _slotOffset * slotIndex;
     }
 
     public bool IsSelectable(PigEntity pig)
@@ -85,10 +86,10 @@ public class QueueService
     private void ShiftQueueForward(int queueIndex, int fromIndex)
     {
         var queue = _queues[queueIndex];
-        var positions = _slotPositions[queueIndex];
-        for (int i = fromIndex; i < queue.Count && i < positions.Length; i++)
+        var first = _firstSlots[queueIndex];
+        for (int i = fromIndex; i < queue.Count; i++)
         {
-            queue[i].transform.DOMove(positions[i], ShiftDuration).SetEase(Ease.OutCubic);
+            queue[i].transform.DOMove(first + _slotOffset * i, ShiftDuration).SetEase(Ease.OutCubic);
         }
     }
 }
