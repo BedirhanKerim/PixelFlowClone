@@ -13,6 +13,7 @@ public struct PigTappedFromShelf { public int PigId; public int SlotIndex; }
 public struct PigTappedFromQueue { public int PigId; }
 
 public struct PigEnteredPath { public int PigId; public Vector3 Entry; }
+public struct ActivePigCountChanged { public int Count; }
 public struct PigLapCompleted { public int PigId; public int AmmoLeft; }
 public struct PigDepleted { public int PigId; }
 

@@ -13,6 +13,6 @@ MonoBehaviour:
   m_Name: LevelLibrary
   m_EditorClassIdentifier: Assembly-CSharp::LevelLibrary
   Levels:
+  - {fileID: 11400000, guid: e69fcfdc295120f4bab651ef2088e1a9, type: 2}
   - {fileID: 11400000, guid: b1fef0a04c5a9fe41914b0ba37fc29cd, type: 2}
-  - {fileID: 0}
   - {fileID: 11400000, guid: b89a3eaa2507b6548ade243b845d2c4f, type: 2}

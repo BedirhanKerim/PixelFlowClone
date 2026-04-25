@@ -72,6 +72,7 @@ public class LevelLoader : MonoBehaviour
     {
         if (_transitionScheduled) return;
         _transitionScheduled = true;
+        Time.timeScale = 0f;
         ReloadAfterDelay(1.5f).Forget();
     }
 
@@ -94,7 +95,8 @@ public class LevelLoader : MonoBehaviour
 
     private async UniTaskVoid ReloadAfterDelay(float delay)
     {
-        await UniTask.Delay(System.TimeSpan.FromSeconds(delay), cancellationToken: _cts.Token);
+        await UniTask.Delay(System.TimeSpan.FromSeconds(delay), DelayType.UnscaledDeltaTime, PlayerLoopTiming.Update, _cts.Token);
+        Time.timeScale = 1f;
         LoadCurrent();
     }
 
@@ -115,6 +117,7 @@ public class LevelLoader : MonoBehaviour
     {
         if (_library == null || _library.Levels == null || _library.Levels.Length == 0) return;
 
+        Time.timeScale = 1f;
         _transitionScheduled = false;
         ClearPreviousPigs();
         _shelf.Clear();

@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using Cysharp.Threading.Tasks;
+using DG.Tweening;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Pool;
@@ -19,6 +21,8 @@ public class GridRenderer : MonoBehaviour
     [SerializeField] private Material _stoneMaterial;
     [SerializeField] private TextMeshPro _hpTextPrefab;
     [SerializeField] private float _hpTextHeight = 0.6f;
+    [SerializeField] private float _hpTextBounceStrength = 0.3f;
+    [SerializeField] private float _hpTextBounceDuration = 0.25f;
 
     private struct CubeState
     {
@@ -59,18 +63,32 @@ public class GridRenderer : MonoBehaviour
     private MaterialPropertyBlock _mpb;
 
     private bool _hasGrid;
+    private int _buildVersion;
 
     private ObjectPool<TextMeshPro> _hpTextPool;
     private readonly Dictionary<int, TextMeshPro> _blockHpTexts = new Dictionary<int, TextMeshPro>();
+    private Vector3 _hpTextBaseScale = Vector3.one;
+    private bool _hpTextBaseScaleCached;
 
     private void Awake()
     {
         _mpb = new MaterialPropertyBlock();
         if (_cubeMesh == null) _cubeMesh = BuildDefaultCubeMesh();
+        if (_hpTextPrefab != null)
+        {
+            _hpTextBaseScale = _hpTextPrefab.transform.localScale;
+            _hpTextBaseScaleCached = true;
+        }
         _hpTextPool = new ObjectPool<TextMeshPro>(
             createFunc: CreateHpText,
             actionOnGet: t => t.gameObject.SetActive(true),
-            actionOnRelease: t => { if (t != null) t.gameObject.SetActive(false); },
+            actionOnRelease: t =>
+            {
+                if (t == null) return;
+                t.transform.DOKill();
+                if (_hpTextBaseScaleCached) t.transform.localScale = _hpTextBaseScale;
+                t.gameObject.SetActive(false);
+            },
             actionOnDestroy: t => { if (t != null) Destroy(t.gameObject); },
             defaultCapacity: 8,
             maxSize: 64);
@@ -133,10 +151,14 @@ public class GridRenderer : MonoBehaviour
 
     private void OnBlockDamaged(ref BlockDamaged e)
     {
-        if (_blockHpTexts.TryGetValue(e.BlockId, out var t) && t != null)
-        {
-            t.text = e.RemainingHealth.ToString();
-        }
+        if (!_blockHpTexts.TryGetValue(e.BlockId, out var t) || t == null) return;
+        t.text = e.RemainingHealth.ToString();
+        if (!_hpTextBaseScaleCached) return;
+        var block = _model.GetBlock(e.BlockId);
+        Vector3 scale = block != null ? GetHpTextScale(block.Size) : _hpTextBaseScale;
+        t.transform.DOKill();
+        t.transform.localScale = scale;
+        t.transform.DOPunchScale(scale * _hpTextBounceStrength, _hpTextBounceDuration, 1, 0.5f);
     }
 
     private void OnBlockPainted(ref BlockPainted e)
@@ -159,6 +181,7 @@ public class GridRenderer : MonoBehaviour
 
     private void BuildGrid(LevelData data)
     {
+        _buildVersion++;
         _cellCount = data.GridSize.x * data.GridSize.y;
         _states = new CubeState[_cellCount];
 
@@ -212,7 +235,8 @@ public class GridRenderer : MonoBehaviour
         _normalColors = new Vector4[normalBuffer + _blockStates.Length];
         _stoneMatrices = new Matrix4x4[stoneBuffer];
 
-        SpawnBlockHpTexts(data);
+        float popInDuration = (_cellCount - 1) * stagger + _config.CubePopInDuration;
+        SpawnBlockHpTexts(data, popInDuration);
 
         _hasGrid = true;
     }
@@ -254,7 +278,7 @@ public class GridRenderer : MonoBehaviour
         }
     }
 
-    private void SpawnBlockHpTexts(LevelData data)
+    private void SpawnBlockHpTexts(LevelData data, float popInDuration)
     {
         ClearBlockHpTexts();
         if (_hpTextPrefab == null || data.ManualBlocks == null) return;
@@ -267,9 +291,33 @@ public class GridRenderer : MonoBehaviour
             var t = _hpTextPool.Get();
             if (t == null) continue;
             t.transform.position = _blockStates[b].Position + new Vector3(0f, _hpTextHeight, 0f);
+            t.transform.localScale = GetHpTextScale(mb.Size);
             t.text = mb.Health.ToString();
+            t.gameObject.SetActive(false);
             _blockHpTexts[b] = t;
         }
+
+        if (_blockHpTexts.Count > 0)
+        {
+            ShowHpTextsAfterDelay(popInDuration, _buildVersion).Forget();
+        }
+    }
+
+    private async UniTaskVoid ShowHpTextsAfterDelay(float delay, int version)
+    {
+        if (delay > 0f) await UniTask.Delay(System.TimeSpan.FromSeconds(delay));
+        if (version != _buildVersion) return;
+        foreach (var kvp in _blockHpTexts)
+        {
+            if (kvp.Value != null) kvp.Value.gameObject.SetActive(true);
+        }
+    }
+
+    private Vector3 GetHpTextScale(Vector2Int blockSize)
+    {
+        float area = Mathf.Max(1, blockSize.x * blockSize.y);
+        float factor = Mathf.Sqrt(area) * _cubeSize;
+        return _hpTextBaseScale * factor;
     }
 
     private void LateUpdate()

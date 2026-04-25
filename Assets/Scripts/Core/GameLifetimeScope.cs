@@ -15,6 +15,7 @@ public class GameLifetimeScope : LifetimeScope
     [SerializeField] private InputService _inputService;
     [SerializeField] private GameFlowController _flowController;
     [SerializeField] private VfxService _vfxService;
+    [SerializeField] private PathCounterUI _pathCounterUI;
 
     protected override void Configure(IContainerBuilder builder)
     {
@@ -39,5 +40,6 @@ public class GameLifetimeScope : LifetimeScope
         builder.RegisterComponent(_inputService);
         builder.RegisterComponent(_flowController);
         builder.RegisterComponent(_vfxService);
+        if (_pathCounterUI != null) builder.RegisterComponent(_pathCounterUI);
     }
 }
