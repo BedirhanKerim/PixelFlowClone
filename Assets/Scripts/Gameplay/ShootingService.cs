@@ -20,43 +20,23 @@ public class ShootingService : MonoBehaviour
         pig.ConsumeAmmo();
 
         var bullet = _bulletFactory.Get();
-        Vector3 from = pig.transform.position;
-        Vector3 to = _renderer.GetCellWorldPos(target);
-        bullet.Setup(from, pig.TintColor);
-
-        byte colorIndex = pig.ColorIndex;
-        int capturedBlockId = blockId;
-        int capturedHp = remainingHealth;
-
-        if (capturedBlockId >= 0)
+        if (bullet != null)
         {
-            if (result == HitResult.Destroyed)
+            var payload = new BulletController.Payload
             {
-                bullet.FlyTo(to, _config.BulletFlightDuration, () =>
-                {
-                    _bulletFactory.Release(bullet);
-                    _eventBus.Raise(new BlockPainted { BlockId = capturedBlockId, ColorIndex = colorIndex });
-                });
-            }
-            else
-            {
-                bullet.FlyTo(to, _config.BulletFlightDuration, () =>
-                {
-                    _bulletFactory.Release(bullet);
-                    _eventBus.Raise(new BlockDamaged { BlockId = capturedBlockId, RemainingHealth = capturedHp });
-                });
-            }
-        }
-        else
-        {
-            bullet.FlyTo(to, _config.BulletFlightDuration, () =>
-            {
-                _bulletFactory.Release(bullet);
-                _eventBus.Raise(new CellPainted { Cell = target, ColorIndex = colorIndex });
-            });
+                From = pig.transform.position,
+                To = _renderer.GetCellWorldPos(target),
+                Color = pig.TintColor,
+                TargetCell = target,
+                BlockId = blockId,
+                ColorIndex = pig.ColorIndex,
+                IsBlockDestroyed = blockId >= 0 && result == HitResult.Destroyed,
+                RemainingHealth = remainingHealth
+            };
+            bullet.Launch(payload, _config.BulletFlightDuration);
         }
 
-        _eventBus.Raise(new ShotFired { PigId = pig.Id, Target = target, ColorIndex = colorIndex });
+        _eventBus.Raise(new ShotFired { PigId = pig.Id, Target = target, ColorIndex = pig.ColorIndex });
         return true;
     }
 }

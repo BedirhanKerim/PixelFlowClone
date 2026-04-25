@@ -50,11 +50,7 @@ public class VfxService : MonoBehaviour
 
     private ParticleSystem CreateSpark()
     {
-        if (_sparkPrefab == null)
-        {
-            Debug.LogError("VfxService: spark prefab not assigned. Run PixelFlow > Create Default Prefabs.");
-            return null;
-        }
+        if (_sparkPrefab == null) return null;
         var instance = Instantiate(_sparkPrefab, transform);
         instance.gameObject.SetActive(false);
         return instance;

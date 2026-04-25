@@ -14,11 +14,7 @@ public class PigFactory : MonoBehaviour
 
     public PigEntity Create(byte colorIndex, int ammo, Color32 color, PigOrigin origin, Transform parent)
     {
-        if (_pigPrefab == null)
-        {
-            Debug.LogError("PigFactory: pig prefab not assigned.");
-            return null;
-        }
+        if (_pigPrefab == null) return null;
         var pig = Instantiate(_pigPrefab, parent);
         pig.InjectServices(_eventBus, _shelf, _queue, _pathService);
         pig.Configure(++_nextId, colorIndex, ammo, color, origin);
