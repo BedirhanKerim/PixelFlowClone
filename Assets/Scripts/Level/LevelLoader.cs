@@ -30,6 +30,7 @@ public class LevelLoader : MonoBehaviour
 
     private PerimeterTrack _track;
     private CancellationTokenSource _cts;
+    private bool _transitionScheduled;
 
     private void Start()
     {
@@ -62,11 +63,15 @@ public class LevelLoader : MonoBehaviour
 
     private void OnLevelCompleted(ref LevelCompleted e)
     {
+        if (_transitionScheduled) return;
+        _transitionScheduled = true;
         AdvanceAfterDelay(0.5f).Forget();
     }
 
     private void OnLevelFailed(ref LevelFailed e)
     {
+        if (_transitionScheduled) return;
+        _transitionScheduled = true;
         ReloadAfterDelay(1.5f).Forget();
     }
 
@@ -108,12 +113,9 @@ public class LevelLoader : MonoBehaviour
 
     public void LoadCurrent()
     {
-        if (_library == null || _library.Levels == null || _library.Levels.Length == 0)
-        {
-            Debug.LogError("LevelLibrary has no levels assigned.");
-            return;
-        }
+        if (_library == null || _library.Levels == null || _library.Levels.Length == 0) return;
 
+        _transitionScheduled = false;
         ClearPreviousPigs();
         _shelf.Clear();
         _queue.Clear();
@@ -126,11 +128,7 @@ public class LevelLoader : MonoBehaviour
         _eventBus.Raise(new LevelLoadRequested { LevelIndex = index });
         _eventBus.Raise(new LevelLoaded { Data = data });
 
-        if (_pathBackLeft == null || _pathBackRight == null || _pathTopRight == null || _pathTopLeft == null || _pathFinish == null)
-        {
-            Debug.LogError("LevelLoader: assign all 5 path transforms (BackLeft, BackRight, TopRight, TopLeft, Finish).");
-            return;
-        }
+        if (_pathBackLeft == null || _pathBackRight == null || _pathTopRight == null || _pathTopLeft == null || _pathFinish == null) return;
         _track.Rebuild(data.GridSize, _pathBackLeft.position, _pathBackRight.position, _pathTopRight.position, _pathTopLeft.position, _pathFinish.position);
 
         SpawnShelfPigs(data);

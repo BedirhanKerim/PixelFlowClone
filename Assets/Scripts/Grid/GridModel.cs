@@ -1,5 +1,4 @@
 using UnityEngine;
-using Debug = UnityEngine.Debug;
 
 public class GridModel
 {
@@ -43,12 +42,7 @@ public class GridModel
 
         int cellLen = data.CellColorIndices?.Length ?? 0;
         int typeLen = data.CellTypes?.Length ?? 0;
-        if (cellLen != total || typeLen != total)
-        {
-            Debug.LogError($"LevelData '{data.name}' arrays do not match grid size {_size.x}x{_size.y}={total}. " +
-                           $"CellColorIndices={cellLen}, CellTypes={typeLen}. Regenerate the level.");
-            return;
-        }
+        if (cellLen != total || typeLen != total) return;
 
         System.Array.Copy(data.CellColorIndices, _targetColors, total);
         System.Array.Copy(data.CellTypes, _types, total);
@@ -167,9 +161,6 @@ public class GridModel
 
     public bool IsLevelComplete() => _paintedCount >= _paintableCount;
 
-    /// Walks cells from startCell in direction. Returns the first visible cube only if its target
-    /// color matches. Targeted (painted but not yet destroyed), stone, or wrong-color cubes block
-    /// the line of sight. Empty cells (original or destroyed) are passed through.
     public bool TryFindFirstMatch(CellAddress startCell, Vector2Int direction, byte colorIndex, out CellAddress hit)
     {
         hit = default;

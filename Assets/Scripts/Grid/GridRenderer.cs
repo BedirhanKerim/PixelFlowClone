@@ -94,11 +94,7 @@ public class GridRenderer : MonoBehaviour
 
     private TextMeshPro CreateHpText()
     {
-        if (_hpTextPrefab == null)
-        {
-            Debug.LogError("GridRenderer: HP text prefab not assigned.");
-            return null;
-        }
+        if (_hpTextPrefab == null) return null;
         var t = Instantiate(_hpTextPrefab, transform);
         t.gameObject.SetActive(false);
         return t;

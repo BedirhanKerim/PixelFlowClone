@@ -1,9 +1,12 @@
 using UnityEngine;
 using UnityEngine.Pool;
+using VContainer;
 
 public class BulletFactory : MonoBehaviour
 {
     [SerializeField] private BulletController _bulletPrefab;
+
+    [Inject] private GameEventBus _eventBus;
 
     private ObjectPool<BulletController> _pool;
 
@@ -23,12 +26,9 @@ public class BulletFactory : MonoBehaviour
 
     private BulletController CreateBullet()
     {
-        if (_bulletPrefab == null)
-        {
-            Debug.LogError("BulletFactory: bullet prefab not assigned. Run PixelFlow > Create Default Prefabs.");
-            return null;
-        }
+        if (_bulletPrefab == null) return null;
         var instance = Instantiate(_bulletPrefab, transform);
+        instance.Bind(this, _eventBus);
         instance.gameObject.SetActive(false);
         return instance;
     }

@@ -4,13 +4,11 @@ using UnityEngine;
 
 public class LevelBuilderWindow : EditorWindow
 {
-    private enum DownscaleFilter { Point, Bilinear }
+    private const float PaletteMergeThreshold = 1f;
 
     private Texture2D _source;
     private Vector2Int _gridSize = new Vector2Int(20, 20);
     private int _maxColors = 6;
-    private float _paletteMergeThreshold = 55f;
-    private DownscaleFilter _filter = DownscaleFilter.Bilinear;
     private int _alphaThreshold = 128;
     private string _levelName = "";
 
@@ -74,13 +72,6 @@ public class LevelBuilderWindow : EditorWindow
             _previewDirty = true;
         }
 
-        var newFilter = (DownscaleFilter)EditorGUILayout.EnumPopup("Downscale Filter", _filter);
-        if (newFilter != _filter)
-        {
-            _filter = newFilter;
-            _previewDirty = true;
-        }
-
         int newAlpha = EditorGUILayout.IntSlider("Alpha Threshold", _alphaThreshold, 0, 255);
         if (newAlpha != _alphaThreshold)
         {
@@ -97,13 +88,6 @@ public class LevelBuilderWindow : EditorWindow
         if (newMax != _maxColors)
         {
             _maxColors = newMax;
-            _previewDirty = true;
-        }
-
-        float newThreshold = EditorGUILayout.Slider("Merge Threshold", _paletteMergeThreshold, 20f, 120f);
-        if (!Mathf.Approximately(newThreshold, _paletteMergeThreshold))
-        {
-            _paletteMergeThreshold = newThreshold;
             _previewDirty = true;
         }
 
@@ -254,9 +238,7 @@ public class LevelBuilderWindow : EditorWindow
             {
                 float u = (x + 0.5f) / _gridSize.x;
                 float v = (y + 0.5f) / _gridSize.y;
-                Color32 c = _filter == DownscaleFilter.Point
-                    ? SamplePoint(u, v, w, h)
-                    : SampleBilinear(u, v);
+                Color32 c = SamplePoint(u, v, w, h);
 
                 int i = y * _gridSize.x + x;
                 if (c.a < _alphaThreshold)
@@ -280,11 +262,6 @@ public class LevelBuilderWindow : EditorWindow
         return _source.GetPixel(sx, sy);
     }
 
-    private Color32 SampleBilinear(float u, float v)
-    {
-        return _source.GetPixelBilinear(u, v);
-    }
-
     private void BuildPalette()
     {
         _palette = new List<Color32>();
@@ -296,7 +273,7 @@ public class LevelBuilderWindow : EditorWindow
             bool unique = true;
             for (int p = 0; p < _palette.Count; p++)
             {
-                if (ColorDistance(c, _palette[p]) < _paletteMergeThreshold)
+                if (ColorDistance(c, _palette[p]) < PaletteMergeThreshold)
                 {
                     unique = false;
                     break;
@@ -424,7 +401,6 @@ public class LevelBuilderWindow : EditorWindow
         AssetDatabase.SaveAssets();
         Selection.activeObject = level;
         EditorGUIUtility.PingObject(level);
-        Debug.Log($"Saved {path}");
     }
 
     private void AutoFillPigs(LevelData level)
@@ -432,10 +408,21 @@ public class LevelBuilderWindow : EditorWindow
         var counts = new int[_palette.Count];
         for (int i = 0; i < level.CellTypes.Length; i++)
         {
-            var type = level.CellTypes[i];
-            byte color = level.CellColorIndices[i];
-            if (type == CellType.Normal) counts[color]++;
-            else if (type == CellType.HealthBlock) counts[color] += level.CellHealth[i];
+            if (level.CellTypes[i] == CellType.Normal)
+            {
+                counts[level.CellColorIndices[i]]++;
+            }
+        }
+        if (level.ManualBlocks != null)
+        {
+            for (int b = 0; b < level.ManualBlocks.Length; b++)
+            {
+                var block = level.ManualBlocks[b];
+                if (block.ColorIndex < counts.Length)
+                {
+                    counts[block.ColorIndex] += block.Health;
+                }
+            }
         }
 
         var all = new List<PigConfig>();
