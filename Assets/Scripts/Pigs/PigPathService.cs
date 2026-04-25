@@ -40,9 +40,27 @@ public class PigPathService : MonoBehaviour
         foreach (var kvp in _pigTokens) { kvp.Value.Cancel(); kvp.Value.Dispose(); }
         _pigTokens.Clear();
         _activePigs.Clear();
+        RaiseCountChanged();
     }
 
     public bool CanDispatch() => _activePigs.Count < _config.MaxSimultaneousPigsOnPath;
+
+    private void AddActivePig(PigEntity pig)
+    {
+        _activePigs.Add(pig);
+        RaiseCountChanged();
+    }
+
+    private void RemoveActivePig(PigEntity pig)
+    {
+        _activePigs.Remove(pig);
+        RaiseCountChanged();
+    }
+
+    private void RaiseCountChanged()
+    {
+        if (_eventBus != null) _eventBus.Raise(new ActivePigCountChanged { Count = _activePigs.Count });
+    }
 
     private void DestroyPig(PigEntity pig)
     {
@@ -56,7 +74,7 @@ public class PigPathService : MonoBehaviour
     {
         if (!CanDispatch()) return;
         pig.State = PigState.Dispatched;
-        _activePigs.Add(pig);
+        AddActivePig(pig);
 
         var cts = CancellationTokenSource.CreateLinkedTokenSource(_lifetimeCts.Token);
         _pigTokens[pig.Id] = cts;
@@ -126,8 +144,7 @@ public class PigPathService : MonoBehaviour
 
             if (depleted || !pig.HasAmmo)
             {
-                _activePigs.Remove(pig);
-                if (pig.Origin == PigOrigin.Shelf) _shelf.ReleaseReservation(pig.ShelfSlotIndex);
+                RemoveActivePig(pig);
                 _eventBus.Raise(new PigDepleted { PigId = pig.Id });
                 DestroyPig(pig);
                 return;
@@ -136,35 +153,22 @@ public class PigPathService : MonoBehaviour
             pig.State = PigState.Returning;
             _eventBus.Raise(new PigLapCompleted { PigId = pig.Id, AmmoLeft = pig.Ammo });
 
-            if (pig.Origin == PigOrigin.Shelf)
+            if (_shelf.TryFindEmptySlot(out var freeIdx))
             {
-                Vector3 slot = _shelf.GetSlotPosition(pig.ShelfSlotIndex);
+                pig.Origin = PigOrigin.Shelf;
+                pig.ShelfSlotIndex = freeIdx;
+                _shelf.TryPlaceAtSlot(freeIdx, pig);
+                Vector3 slot = _shelf.GetSlotPosition(freeIdx);
+                pig.MeshTransform.DOLocalRotateQuaternion(PigEntity.IdleLocalRotation, 0.4f).SetEase(Ease.InOutCubic);
                 await pig.transform.DOMove(slot, 0.4f).SetEase(Ease.InOutCubic).AwaitCompletion(ct);
-                _shelf.ReturnDispatchedPig(pig);
                 pig.State = PigState.Idle;
-                pig.ResetMeshToIdle();
-                _activePigs.Remove(pig);
-                _eventBus.Raise(new PigReturnedToShelf { PigId = pig.Id, SlotIndex = pig.ShelfSlotIndex });
+                RemoveActivePig(pig);
+                _eventBus.Raise(new PigReturnedToShelf { PigId = pig.Id, SlotIndex = freeIdx });
             }
             else
             {
-                if (_shelf.TryFindEmptySlot(out var freeIdx))
-                {
-                    pig.Origin = PigOrigin.Shelf;
-                    pig.ShelfSlotIndex = freeIdx;
-                    _shelf.TryPlaceAtSlot(freeIdx, pig);
-                    Vector3 slot = _shelf.GetSlotPosition(freeIdx);
-                    await pig.transform.DOMove(slot, 0.4f).SetEase(Ease.InOutCubic).AwaitCompletion(ct);
-                    pig.State = PigState.Idle;
-                    pig.ResetMeshToIdle();
-                    _activePigs.Remove(pig);
-                    _eventBus.Raise(new PigReturnedToShelf { PigId = pig.Id, SlotIndex = freeIdx });
-                }
-                else
-                {
-                    _activePigs.Remove(pig);
-                    _eventBus.Raise(new ShelfOverflowFail { PigId = pig.Id });
-                }
+                RemoveActivePig(pig);
+                _eventBus.Raise(new ShelfOverflowFail { PigId = pig.Id });
             }
         }
         finally
