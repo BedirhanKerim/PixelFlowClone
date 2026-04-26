@@ -1,4 +1,5 @@
-using DG.Tweening;
+using System;
+using Cysharp.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.Pool;
 using VContainer;
@@ -10,6 +11,7 @@ public class VfxService : MonoBehaviour
     [Inject] private GridRenderer _renderer;
 
     [SerializeField] private ParticleSystem _sparkPrefab;
+    [SerializeField] private float _sparkLifetime = 1f;
 
     private ObjectPool<ParticleSystem> _sparkPool;
 
@@ -45,7 +47,14 @@ public class VfxService : MonoBehaviour
         Color c = _model.PaletteColor(e.ColorIndex);
         main.startColor = new ParticleSystem.MinMaxGradient(c);
         ps.Play();
-        DOVirtual.DelayedCall(1f, () => _sparkPool.Release(ps));
+        ReleaseAfterDelay(ps, _sparkLifetime).Forget();
+    }
+
+    private async UniTaskVoid ReleaseAfterDelay(ParticleSystem ps, float delay)
+    {
+        await UniTask.Delay(TimeSpan.FromSeconds(delay), cancellationToken: this.GetCancellationTokenOnDestroy());
+        if (this == null || ps == null || _sparkPool == null) return;
+        _sparkPool.Release(ps);
     }
 
     private ParticleSystem CreateSpark()

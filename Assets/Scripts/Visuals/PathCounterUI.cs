@@ -47,7 +47,7 @@ public class PathCounterUI : MonoBehaviour
         if (_text == null) return;
         int max = _config.MaxSimultaneousPigsOnPath;
         int remaining = Mathf.Max(0, max - activeCount);
-        _text.text = $"{remaining}/{max}";
+        _text.SetText("{0}/{1}", remaining, max);
         if (bounce && _baseScaleCached) PlayBounce();
     }
 

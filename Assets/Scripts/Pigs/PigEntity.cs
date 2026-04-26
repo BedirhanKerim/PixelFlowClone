@@ -139,6 +139,6 @@ public class PigEntity : MonoBehaviour, IInteractable
 
     private void RefreshAmmoText()
     {
-        if (_ammoText != null) _ammoText.text = Ammo.ToString();
+        if (_ammoText != null) _ammoText.SetText("{0}", Ammo);
     }
 }

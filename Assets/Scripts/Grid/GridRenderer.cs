@@ -171,7 +171,7 @@ public class GridRenderer : MonoBehaviour
     private void OnBlockDamaged(ref BlockDamaged e)
     {
         if (!_blockHpTexts.TryGetValue(e.BlockId, out var t) || t == null) return;
-        t.text = e.RemainingHealth.ToString();
+        t.SetText("{0}", e.RemainingHealth);
         if (!_hpTextBaseScaleCached) return;
         var block = _model.GetBlock(e.BlockId);
         Vector3 scale = block != null ? GetHpTextScale(block.Size) : _hpTextBaseScale;
@@ -381,7 +381,7 @@ public class GridRenderer : MonoBehaviour
             if (t == null) continue;
             t.transform.position = _blockStates[b].Position + new Vector3(0f, _hpTextHeight, 0f);
             t.transform.localScale = GetHpTextScale(mb.Size);
-            t.text = mb.Health.ToString();
+            t.SetText("{0}", mb.Health);
             t.gameObject.SetActive(false);
             _blockHpTexts[b] = t;
         }
