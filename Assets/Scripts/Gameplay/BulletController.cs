@@ -55,29 +55,30 @@ public class BulletController : MonoBehaviour
 
         transform.position = _from;
 
-        _mpb ??= new MaterialPropertyBlock();
         if (_renderer != null)
         {
-            _renderer.GetPropertyBlock(_mpb);
+            _mpb ??= new MaterialPropertyBlock();
             _mpb.SetColor(BaseColorId, payload.Color);
             _renderer.SetPropertyBlock(_mpb);
         }
 
         if (_trail != null)
         {
-            _trail.startColor = payload.Color;
-            _trail.endColor = new Color(payload.Color.r / 255f, payload.Color.g / 255f, payload.Color.b / 255f, 0f);
+            Color c = payload.Color;
+            _trail.startColor = c;
+            c.a = 0f;
+            _trail.endColor = c;
             _trail.Clear();
         }
 
         _flying = true;
     }
 
-    private void Update()
+    public void Tick(float dt)
     {
         if (!_flying) return;
 
-        _elapsed += Time.deltaTime;
+        _elapsed += dt;
         float t = _elapsed >= _duration ? 1f : _elapsed / _duration;
         transform.position = Vector3.LerpUnclamped(_from, _to, t);
 

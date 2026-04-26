@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Cysharp.Threading.Tasks;
 using DG.Tweening;
@@ -8,7 +9,7 @@ using VContainer;
 
 public class GridRenderer : MonoBehaviour
 {
-    private const int InstanceBatchLimit = 1023;
+    private const int BatchSize = 1023;
     private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
     private static readonly Color StoneColor = new Color(0.18f, 0.18f, 0.22f, 1f);
 
@@ -32,35 +33,49 @@ public class GridRenderer : MonoBehaviour
         public float PopInDelay;
         public float PopInElapsed;
         public float DestroyElapsed;
+        public int BatchIndex;
+        public int SlotIndex;
         public bool IsStone;
         public bool IsDestroying;
+        public bool IsAnimating;
         public bool IsDead;
     }
 
     private struct BlockState
     {
-        public int Id;
         public Vector3 Position;
         public Vector3 Scale;
         public Color Color;
         public float PopInDelay;
         public float PopInElapsed;
         public float DestroyElapsed;
+        public int BatchIndex;
+        public int SlotIndex;
         public bool IsDestroying;
+        public bool IsAnimating;
         public bool IsDead;
     }
 
     private CubeState[] _states;
     private BlockState[] _blockStates;
-    private Matrix4x4[] _normalMatrices;
-    private Vector4[] _normalColors;
-    private Matrix4x4[] _stoneMatrices;
-    private readonly Matrix4x4[] _batchMatrices = new Matrix4x4[InstanceBatchLimit];
-    private readonly Vector4[] _batchColors = new Vector4[InstanceBatchLimit];
+
+    private Matrix4x4[][] _normalBatches;
+    private Vector4[][] _normalBatchColors;
+    private MaterialPropertyBlock[] _normalBatchMpbs;
+    private bool[] _normalBatchColorsDirty;
+    private int[] _normalBatchCounts;
+    private int _normalBatchCount;
+
+    private Matrix4x4[][] _stoneBatches;
+    private int[] _stoneBatchCounts;
+    private int _stoneBatchCount;
+
+    private readonly List<int> _animatingCells = new List<int>(64);
+    private readonly List<int> _animatingBlocks = new List<int>(8);
+
     private int _cellCount;
     private float _cubeSize;
     private Vector3 _originOffset;
-    private MaterialPropertyBlock _mpb;
 
     private bool _hasGrid;
     private int _buildVersion;
@@ -72,7 +87,6 @@ public class GridRenderer : MonoBehaviour
 
     private void Awake()
     {
-        _mpb = new MaterialPropertyBlock();
         if (_cubeMesh == null) _cubeMesh = BuildDefaultCubeMesh();
         if (_hpTextPrefab != null)
         {
@@ -139,7 +153,7 @@ public class GridRenderer : MonoBehaviour
     private void OnCellPainted(ref CellPainted e)
     {
         int idx = _model.Index(e.Cell);
-        if (idx < 0 || idx >= _states.Length) return;
+        if (idx < 0 || _states == null || idx >= _states.Length) return;
         ref var state = ref _states[idx];
         if (state.IsDead) return;
 
@@ -147,6 +161,11 @@ public class GridRenderer : MonoBehaviour
         state.FinalColor = _model.PaletteColor(e.ColorIndex);
         state.IsDestroying = true;
         state.DestroyElapsed = 0f;
+        if (!state.IsAnimating)
+        {
+            state.IsAnimating = true;
+            _animatingCells.Add(idx);
+        }
     }
 
     private void OnBlockDamaged(ref BlockDamaged e)
@@ -168,20 +187,24 @@ public class GridRenderer : MonoBehaviour
             if (t != null) _hpTextPool.Release(t);
             _blockHpTexts.Remove(e.BlockId);
         }
-        if (_blockStates != null && e.BlockId >= 0 && e.BlockId < _blockStates.Length)
+        if (_blockStates == null || e.BlockId < 0 || e.BlockId >= _blockStates.Length) return;
+        ref var bs = ref _blockStates[e.BlockId];
+        if (bs.IsDead || bs.IsDestroying) return;
+        bs.IsDestroying = true;
+        bs.DestroyElapsed = 0f;
+        if (!bs.IsAnimating)
         {
-            ref var bs = ref _blockStates[e.BlockId];
-            if (!bs.IsDead && !bs.IsDestroying)
-            {
-                bs.IsDestroying = true;
-                bs.DestroyElapsed = 0f;
-            }
+            bs.IsAnimating = true;
+            _animatingBlocks.Add(e.BlockId);
         }
     }
 
     private void BuildGrid(LevelData data)
     {
         _buildVersion++;
+        _animatingCells.Clear();
+        _animatingBlocks.Clear();
+
         _cellCount = data.GridSize.x * data.GridSize.y;
         _states = new CubeState[_cellCount];
 
@@ -195,14 +218,28 @@ public class GridRenderer : MonoBehaviour
             : 0f;
         float stagger = Mathf.Max(0f, Mathf.Min(_config.CubePopInStagger, maxStagger));
 
-        int normalBuffer = 0;
-        int stoneBuffer = 0;
+        int normalCount = 0;
+        int stoneCount = 0;
+        for (int i = 0; i < _cellCount; i++)
+        {
+            var type = data.CellTypes[i];
+            if (type == CellType.Empty || type == CellType.HealthBlock) continue;
+            if (type == CellType.Stone) stoneCount++;
+            else normalCount++;
+        }
+        int blockCount = data.ManualBlocks?.Length ?? 0;
+
+        AllocateBatches(normalCount + blockCount, stoneCount);
+
+        int nextNormalSlot = 0;
+        int nextStoneSlot = 0;
         for (int i = 0; i < _cellCount; i++)
         {
             var type = data.CellTypes[i];
             if (type == CellType.Empty || type == CellType.HealthBlock)
             {
                 _states[i].IsDead = true;
+                _states[i].BatchIndex = -1;
                 continue;
             }
 
@@ -210,30 +247,40 @@ public class GridRenderer : MonoBehaviour
             int y = i / data.GridSize.x;
             var pos = _originOffset + new Vector3(x * _cubeSize, 0f, y * _cubeSize);
 
-            _states[i] = new CubeState
-            {
-                Position = pos,
-                PopInDelay = i * stagger,
-                PopInElapsed = 0f,
-                IsStone = type == CellType.Stone,
-                IsDead = false,
-                IsDestroying = false,
-                DestroyElapsed = 0f,
-                FinalColor = data.PaletteColors[data.CellColorIndices[i]],
-                PlaceholderColor = type == CellType.Stone
-                    ? StoneColor
-                    : (Color)data.PaletteColors[data.CellColorIndices[i]]
-            };
+            bool isStone = type == CellType.Stone;
+            int slot = isStone ? nextStoneSlot++ : nextNormalSlot++;
+            int batch = slot / BatchSize;
+            int slotInBatch = slot % BatchSize;
 
-            if (_states[i].IsStone) stoneBuffer++;
-            else normalBuffer++;
+            ref var s = ref _states[i];
+            s.Position = pos;
+            s.PopInDelay = i * stagger;
+            s.PopInElapsed = 0f;
+            s.IsStone = isStone;
+            s.IsDead = false;
+            s.IsDestroying = false;
+            s.DestroyElapsed = 0f;
+            s.FinalColor = data.PaletteColors[data.CellColorIndices[i]];
+            s.PlaceholderColor = isStone ? StoneColor : (Color)data.PaletteColors[data.CellColorIndices[i]];
+            s.BatchIndex = batch;
+            s.SlotIndex = slotInBatch;
+            s.IsAnimating = true;
+
+            if (isStone)
+            {
+                _stoneBatches[batch][slotInBatch] = default;
+            }
+            else
+            {
+                _normalBatches[batch][slotInBatch] = default;
+                _normalBatchColors[batch][slotInBatch] = s.PlaceholderColor;
+                _normalBatchColorsDirty[batch] = true;
+            }
+
+            _animatingCells.Add(i);
         }
 
-        BuildBlockStates(data, stagger);
-
-        _normalMatrices = new Matrix4x4[normalBuffer + _blockStates.Length];
-        _normalColors = new Vector4[normalBuffer + _blockStates.Length];
-        _stoneMatrices = new Matrix4x4[stoneBuffer];
+        BuildBlockStates(data, stagger, ref nextNormalSlot);
 
         float popInDuration = (_cellCount - 1) * stagger + _config.CubePopInDuration;
         SpawnBlockHpTexts(data, popInDuration);
@@ -241,11 +288,40 @@ public class GridRenderer : MonoBehaviour
         _hasGrid = true;
     }
 
-    private void BuildBlockStates(LevelData data, float stagger)
+    private void AllocateBatches(int normalSlotCount, int stoneSlotCount)
+    {
+        _normalBatchCount = normalSlotCount > 0 ? (normalSlotCount + BatchSize - 1) / BatchSize : 0;
+        _normalBatches = new Matrix4x4[_normalBatchCount][];
+        _normalBatchColors = new Vector4[_normalBatchCount][];
+        _normalBatchMpbs = new MaterialPropertyBlock[_normalBatchCount];
+        _normalBatchCounts = new int[_normalBatchCount];
+        _normalBatchColorsDirty = new bool[_normalBatchCount];
+        for (int b = 0; b < _normalBatchCount; b++)
+        {
+            int size = Mathf.Min(BatchSize, normalSlotCount - b * BatchSize);
+            _normalBatches[b] = new Matrix4x4[size];
+            _normalBatchColors[b] = new Vector4[size];
+            _normalBatchMpbs[b] = new MaterialPropertyBlock();
+            _normalBatchCounts[b] = size;
+            _normalBatchColorsDirty[b] = true;
+        }
+
+        _stoneBatchCount = stoneSlotCount > 0 ? (stoneSlotCount + BatchSize - 1) / BatchSize : 0;
+        _stoneBatches = new Matrix4x4[_stoneBatchCount][];
+        _stoneBatchCounts = new int[_stoneBatchCount];
+        for (int b = 0; b < _stoneBatchCount; b++)
+        {
+            int size = Mathf.Min(BatchSize, stoneSlotCount - b * BatchSize);
+            _stoneBatches[b] = new Matrix4x4[size];
+            _stoneBatchCounts[b] = size;
+        }
+    }
+
+    private void BuildBlockStates(LevelData data, float stagger, ref int nextNormalSlot)
     {
         if (data.ManualBlocks == null || data.ManualBlocks.Length == 0)
         {
-            _blockStates = System.Array.Empty<BlockState>();
+            _blockStates = Array.Empty<BlockState>();
             return;
         }
 
@@ -260,21 +336,34 @@ public class GridRenderer : MonoBehaviour
                 (mb.Size.y - 1) * 0.5f * _cubeSize);
 
             int popDelayIndex = mb.Origin.y * data.GridSize.x + mb.Origin.x;
+            Color color = mb.ColorIndex < data.PaletteColors.Length
+                ? (Color)data.PaletteColors[mb.ColorIndex]
+                : Color.white;
+
+            int slot = nextNormalSlot++;
+            int batch = slot / BatchSize;
+            int slotInBatch = slot % BatchSize;
 
             _blockStates[b] = new BlockState
             {
-                Id = b,
                 Position = center,
                 Scale = new Vector3(mb.Size.x, 1f, mb.Size.y) * (_cubeSize * 0.95f),
-                Color = mb.ColorIndex < data.PaletteColors.Length
-                    ? (Color)data.PaletteColors[mb.ColorIndex]
-                    : Color.white,
+                Color = color,
                 PopInDelay = popDelayIndex * stagger,
                 PopInElapsed = 0f,
                 DestroyElapsed = 0f,
+                BatchIndex = batch,
+                SlotIndex = slotInBatch,
                 IsDestroying = false,
+                IsAnimating = true,
                 IsDead = false
             };
+
+            _normalBatches[batch][slotInBatch] = default;
+            _normalBatchColors[batch][slotInBatch] = color;
+            _normalBatchColorsDirty[batch] = true;
+
+            _animatingBlocks.Add(b);
         }
     }
 
@@ -305,7 +394,7 @@ public class GridRenderer : MonoBehaviour
 
     private async UniTaskVoid ShowHpTextsAfterDelay(float delay, int version)
     {
-        if (delay > 0f) await UniTask.Delay(System.TimeSpan.FromSeconds(delay));
+        if (delay > 0f) await UniTask.Delay(TimeSpan.FromSeconds(delay));
         if (version != _buildVersion) return;
         foreach (var kvp in _blockHpTexts)
         {
@@ -322,135 +411,204 @@ public class GridRenderer : MonoBehaviour
 
     private void LateUpdate()
     {
-        if (!_hasGrid || _states == null) return;
+        if (!_hasGrid) return;
 
-        int normalCount = 0;
-        int stoneCount = 0;
+        float dt = Time.deltaTime;
         float popDur = _config.CubePopInDuration;
         float paintDur = _config.CellPaintDuration;
-        float dt = Time.deltaTime;
-        Vector3 cellTargetScale = Vector3.one * _cubeSize * 0.95f;
+        float invPopDur = 1f / Mathf.Max(popDur, 0.0001f);
+        float invPaintDur = 1f / Mathf.Max(paintDur, 0.0001f);
+        float cellTargetScale = _cubeSize * 0.95f;
 
-        for (int i = 0; i < _cellCount; i++)
+        TickCells(dt, popDur, invPopDur, invPaintDur, cellTargetScale);
+        TickBlocks(dt, popDur, invPopDur, invPaintDur);
+
+        DrawInstances();
+    }
+
+    private void TickCells(float dt, float popDur, float invPopDur, float invPaintDur, float cellTargetScale)
+    {
+        for (int li = _animatingCells.Count - 1; li >= 0; li--)
         {
-            ref var s = ref _states[i];
-            if (s.IsDead) continue;
+            int cellIdx = _animatingCells[li];
+            ref var s = ref _states[cellIdx];
 
-            if (s.PopInElapsed < popDur + s.PopInDelay)
+            if (s.PopInElapsed < s.PopInDelay)
             {
                 s.PopInElapsed += dt;
+                continue;
             }
 
-            float popT = Mathf.Clamp01((s.PopInElapsed - s.PopInDelay) / Mathf.Max(popDur, 0.0001f));
-            popT = popT <= 0f ? 0f : EaseOutBack(popT);
+            float popEnd = popDur + s.PopInDelay;
+            if (s.PopInElapsed < popEnd) s.PopInElapsed += dt;
 
-            Vector3 scale = cellTargetScale * popT;
-            Quaternion rot = Quaternion.identity;
-            Color color = s.IsStone ? StoneColor : s.PlaceholderColor;
+            float popT = (s.PopInElapsed - s.PopInDelay) * invPopDur;
+            if (popT > 1f) popT = 1f;
+            float popEased = popT <= 0f ? 0f : EaseOutBack(popT);
+
+            Matrix4x4 matrix;
+            bool stillAnimating = true;
+            bool colorChanged = false;
 
             if (s.IsDestroying)
             {
                 s.DestroyElapsed += dt;
-                float dt01 = Mathf.Clamp01(s.DestroyElapsed / Mathf.Max(paintDur, 0.0001f));
-                color = s.FinalColor;
-                scale = cellTargetScale * EaseInBack(1f - dt01);
-                rot = Quaternion.Euler(dt01 * 180f, dt01 * 180f, 0f);
+                float dt01 = s.DestroyElapsed * invPaintDur;
+                if (dt01 > 1f) dt01 = 1f;
+                float ds = cellTargetScale * EaseInBack(1f - dt01);
+                Quaternion rot = Quaternion.Euler(dt01 * 180f, dt01 * 180f, 0f);
+                matrix = Matrix4x4.TRS(s.Position, rot, new Vector3(ds, ds, ds));
+                colorChanged = true;
 
                 if (dt01 >= 1f)
                 {
                     s.IsDead = true;
-                    continue;
+                    stillAnimating = false;
+                    matrix = default;
                 }
-            }
-
-            var matrix = Matrix4x4.TRS(s.Position, rot, scale);
-            if (s.IsStone)
-            {
-                if (stoneCount < _stoneMatrices.Length) _stoneMatrices[stoneCount++] = matrix;
             }
             else
             {
-                if (normalCount < _normalMatrices.Length)
+                float scale = cellTargetScale * popEased;
+                matrix = BuildIdentityTRS(s.Position, scale);
+                if (popT >= 1f) stillAnimating = false;
+            }
+
+            if (s.IsStone)
+            {
+                _stoneBatches[s.BatchIndex][s.SlotIndex] = matrix;
+            }
+            else
+            {
+                _normalBatches[s.BatchIndex][s.SlotIndex] = matrix;
+                if (colorChanged)
                 {
-                    _normalMatrices[normalCount] = matrix;
-                    _normalColors[normalCount] = color;
-                    normalCount++;
+                    _normalBatchColors[s.BatchIndex][s.SlotIndex] = s.FinalColor;
+                    _normalBatchColorsDirty[s.BatchIndex] = true;
                 }
             }
+
+            if (!stillAnimating)
+            {
+                s.IsAnimating = false;
+                int last = _animatingCells.Count - 1;
+                _animatingCells[li] = _animatingCells[last];
+                _animatingCells.RemoveAt(last);
+            }
         }
+    }
 
-        for (int b = 0; b < _blockStates.Length; b++)
+    private void TickBlocks(float dt, float popDur, float invPopDur, float invPaintDur)
+    {
+        for (int li = _animatingBlocks.Count - 1; li >= 0; li--)
         {
-            ref var bs = ref _blockStates[b];
-            if (bs.IsDead) continue;
+            int blockIdx = _animatingBlocks[li];
+            ref var bs = ref _blockStates[blockIdx];
 
-            if (bs.PopInElapsed < popDur + bs.PopInDelay)
+            if (bs.PopInElapsed < bs.PopInDelay)
             {
                 bs.PopInElapsed += dt;
+                continue;
             }
 
-            float popT = Mathf.Clamp01((bs.PopInElapsed - bs.PopInDelay) / Mathf.Max(popDur, 0.0001f));
-            popT = popT <= 0f ? 0f : EaseOutBack(popT);
+            float popEnd = popDur + bs.PopInDelay;
+            if (bs.PopInElapsed < popEnd) bs.PopInElapsed += dt;
 
-            Vector3 scale = bs.Scale * popT;
-            Quaternion rot = Quaternion.identity;
+            float popT = (bs.PopInElapsed - bs.PopInDelay) * invPopDur;
+            if (popT > 1f) popT = 1f;
+            float popEased = popT <= 0f ? 0f : EaseOutBack(popT);
+
+            Matrix4x4 matrix;
+            bool stillAnimating = true;
 
             if (bs.IsDestroying)
             {
                 bs.DestroyElapsed += dt;
-                float dt01 = Mathf.Clamp01(bs.DestroyElapsed / Mathf.Max(paintDur, 0.0001f));
-                scale = bs.Scale * EaseInBack(1f - dt01);
-                rot = Quaternion.Euler(dt01 * 180f, dt01 * 180f, 0f);
+                float dt01 = bs.DestroyElapsed * invPaintDur;
+                if (dt01 > 1f) dt01 = 1f;
+                Vector3 ds = bs.Scale * EaseInBack(1f - dt01);
+                Quaternion rot = Quaternion.Euler(dt01 * 180f, dt01 * 180f, 0f);
+                matrix = Matrix4x4.TRS(bs.Position, rot, ds);
 
                 if (dt01 >= 1f)
                 {
                     bs.IsDead = true;
-                    _model.MarkBlockDestroyed(bs.Id);
-                    continue;
+                    stillAnimating = false;
+                    matrix = default;
+                    _model.MarkBlockDestroyed(blockIdx);
                 }
             }
-
-            var matrix = Matrix4x4.TRS(bs.Position, rot, scale);
-            if (normalCount < _normalMatrices.Length)
+            else
             {
-                _normalMatrices[normalCount] = matrix;
-                _normalColors[normalCount] = bs.Color;
-                normalCount++;
+                matrix = BuildIdentityTRS(bs.Position, bs.Scale * popEased);
+                if (popT >= 1f) stillAnimating = false;
+            }
+
+            _normalBatches[bs.BatchIndex][bs.SlotIndex] = matrix;
+
+            if (!stillAnimating)
+            {
+                bs.IsAnimating = false;
+                int last = _animatingBlocks.Count - 1;
+                _animatingBlocks[li] = _animatingBlocks[last];
+                _animatingBlocks.RemoveAt(last);
             }
         }
-
-        DrawInstances(normalCount, stoneCount);
     }
 
-    private void DrawInstances(int normalCount, int stoneCount)
+    private void DrawInstances()
     {
-        if (normalCount > 0 && _normalMaterial != null)
+        if (_normalMaterial != null)
         {
-            int drawn = 0;
-            while (drawn < normalCount)
+            for (int b = 0; b < _normalBatchCount; b++)
             {
-                int batch = Mathf.Min(InstanceBatchLimit, normalCount - drawn);
-                System.Array.Copy(_normalMatrices, drawn, _batchMatrices, 0, batch);
-                System.Array.Copy(_normalColors, drawn, _batchColors, 0, batch);
-
-                _mpb.Clear();
-                _mpb.SetVectorArray(BaseColorId, _batchColors);
-                Graphics.DrawMeshInstanced(_cubeMesh, 0, _normalMaterial, _batchMatrices, batch, _mpb);
-                drawn += batch;
+                int count = _normalBatchCounts[b];
+                if (count == 0) continue;
+                var mpb = _normalBatchMpbs[b];
+                if (_normalBatchColorsDirty[b])
+                {
+                    mpb.SetVectorArray(BaseColorId, _normalBatchColors[b]);
+                    _normalBatchColorsDirty[b] = false;
+                }
+                Graphics.DrawMeshInstanced(_cubeMesh, 0, _normalMaterial, _normalBatches[b], count, mpb);
             }
         }
 
-        if (stoneCount > 0 && _stoneMaterial != null)
+        if (_stoneMaterial != null)
         {
-            int drawn = 0;
-            while (drawn < stoneCount)
+            for (int b = 0; b < _stoneBatchCount; b++)
             {
-                int batch = Mathf.Min(InstanceBatchLimit, stoneCount - drawn);
-                System.Array.Copy(_stoneMatrices, drawn, _batchMatrices, 0, batch);
-                Graphics.DrawMeshInstanced(_cubeMesh, 0, _stoneMaterial, _batchMatrices, batch);
-                drawn += batch;
+                int count = _stoneBatchCounts[b];
+                if (count == 0) continue;
+                Graphics.DrawMeshInstanced(_cubeMesh, 0, _stoneMaterial, _stoneBatches[b], count);
             }
         }
+    }
+
+    private static Matrix4x4 BuildIdentityTRS(Vector3 pos, float uniformScale)
+    {
+        Matrix4x4 m = default;
+        m.m00 = uniformScale;
+        m.m11 = uniformScale;
+        m.m22 = uniformScale;
+        m.m03 = pos.x;
+        m.m13 = pos.y;
+        m.m23 = pos.z;
+        m.m33 = 1f;
+        return m;
+    }
+
+    private static Matrix4x4 BuildIdentityTRS(Vector3 pos, Vector3 scale)
+    {
+        Matrix4x4 m = default;
+        m.m00 = scale.x;
+        m.m11 = scale.y;
+        m.m22 = scale.z;
+        m.m03 = pos.x;
+        m.m13 = pos.y;
+        m.m23 = pos.z;
+        m.m33 = 1f;
+        return m;
     }
 
     private static float EaseOutBack(float t)

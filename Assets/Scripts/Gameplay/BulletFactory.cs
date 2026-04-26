@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Pool;
 using VContainer;
@@ -9,6 +10,7 @@ public class BulletFactory : MonoBehaviour
     [Inject] private GameEventBus _eventBus;
 
     private ObjectPool<BulletController> _pool;
+    private readonly List<BulletController> _active = new List<BulletController>(64);
 
     private void Awake()
     {
@@ -21,8 +23,36 @@ public class BulletFactory : MonoBehaviour
             maxSize: 64);
     }
 
-    public BulletController Get() => _pool.Get();
-    public void Release(BulletController bullet) => _pool.Release(bullet);
+    public BulletController Get()
+    {
+        var b = _pool.Get();
+        if (b != null) _active.Add(b);
+        return b;
+    }
+
+    public void Release(BulletController bullet)
+    {
+        if (bullet == null) return;
+        int idx = _active.IndexOf(bullet);
+        if (idx >= 0)
+        {
+            int last = _active.Count - 1;
+            _active[idx] = _active[last];
+            _active.RemoveAt(last);
+        }
+        _pool.Release(bullet);
+    }
+
+    private void Update()
+    {
+        if (_active.Count == 0) return;
+        float dt = Time.deltaTime;
+        for (int i = _active.Count - 1; i >= 0; i--)
+        {
+            var b = _active[i];
+            if (b != null) b.Tick(dt);
+        }
+    }
 
     private BulletController CreateBullet()
     {

@@ -3,7 +3,6 @@ using VContainer;
 
 public class ShootingService : MonoBehaviour
 {
-    [Inject] private GameEventBus _eventBus;
     [Inject] private GridModel _model;
     [Inject] private GridRenderer _renderer;
     [Inject] private GameConfig _config;
@@ -36,7 +35,6 @@ public class ShootingService : MonoBehaviour
             bullet.Launch(payload, _config.BulletFlightDuration);
         }
 
-        _eventBus.Raise(new ShotFired { PigId = pig.Id, Target = target, ColorIndex = pig.ColorIndex });
         return true;
     }
 }
