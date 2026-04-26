@@ -18,14 +18,19 @@ public class WinConditionService : IStartable, System.IDisposable
     public void Start()
     {
         _eventBus.SubscribeTo<CellPainted>(OnCellPainted);
+        _eventBus.SubscribeTo<BlockPainted>(OnBlockPainted);
     }
 
     public void Dispose()
     {
         _eventBus.UnsubscribeFrom<CellPainted>(OnCellPainted);
+        _eventBus.UnsubscribeFrom<BlockPainted>(OnBlockPainted);
     }
 
-    private void OnCellPainted(ref CellPainted e)
+    private void OnCellPainted(ref CellPainted e) => CheckComplete();
+    private void OnBlockPainted(ref BlockPainted e) => CheckComplete();
+
+    private void CheckComplete()
     {
         if (_model.IsLevelComplete())
         {
