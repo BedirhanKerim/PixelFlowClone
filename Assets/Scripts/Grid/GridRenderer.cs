@@ -20,6 +20,7 @@ public class GridRenderer : MonoBehaviour
     [SerializeField] private Mesh _cubeMesh;
     [SerializeField] private Material _normalMaterial;
     [SerializeField] private Material _stoneMaterial;
+    [SerializeField] private Material _outlineMaterial;
     [SerializeField] private TextMeshPro _hpTextPrefab;
     [SerializeField] private float _hpTextHeight = 0.6f;
     [SerializeField] private float _hpTextBounceStrength = 0.3f;
@@ -558,6 +559,20 @@ public class GridRenderer : MonoBehaviour
 
     private void DrawInstances()
     {
+        if (_outlineMaterial != null)
+        {
+            for (int b = 0; b < _normalBatchCount; b++)
+            {
+                int count = _normalBatchCounts[b];
+                if (count > 0) Graphics.DrawMeshInstanced(_cubeMesh, 0, _outlineMaterial, _normalBatches[b], count);
+            }
+            for (int b = 0; b < _stoneBatchCount; b++)
+            {
+                int count = _stoneBatchCounts[b];
+                if (count > 0) Graphics.DrawMeshInstanced(_cubeMesh, 0, _outlineMaterial, _stoneBatches[b], count);
+            }
+        }
+
         if (_normalMaterial != null)
         {
             for (int b = 0; b < _normalBatchCount; b++)

@@ -361,7 +361,7 @@ Camera:
   near clip plane: 0.3
   far clip plane: 1000
   field of view: 60
-  orthographic: 1
+  orthographic: 0
   orthographic size: 12.8
   m_Depth: -1
   m_CullingMask:
@@ -387,7 +387,7 @@ Transform:
   m_GameObject: {fileID: 330585543}
   serializedVersion: 2
   m_LocalRotation: {x: 0.60876137, y: 0, z: 0, w: 0.7933534}
-  m_LocalPosition: {x: 0, y: 17.26, z: -7.98}
+  m_LocalPosition: {x: 0, y: 22.44, z: -9.37}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -982,7 +982,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: -0.52, z: 0}
-  m_LocalScale: {x: 1.57, y: 1, z: 3.28}
+  m_LocalScale: {x: 2.37, y: 1, z: 3.28}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 760024441}
@@ -1542,6 +1542,7 @@ MonoBehaviour:
   _cubeMesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
   _normalMaterial: {fileID: 2100000, guid: 5b3088cfe9388ef4298ab081b1ee318c, type: 2}
   _stoneMaterial: {fileID: 0}
+  _outlineMaterial: {fileID: 2100000, guid: 105155b4b1ea68d49880e267224cc1db, type: 2}
   _hpTextPrefab: {fileID: 3474703241078947602, guid: 3adef66157a0e6f4e9d4aae131f196ab, type: 3}
   _hpTextHeight: 0.6
   _hpTextBounceStrength: 0.3
