@@ -74,6 +74,11 @@ public class BulletController : MonoBehaviour
         _flying = true;
     }
 
+    public void Abort()
+    {
+        _flying = false;
+    }
+
     public void Tick(float dt)
     {
         if (!_flying) return;

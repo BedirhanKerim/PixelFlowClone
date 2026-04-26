@@ -23,6 +23,33 @@ public class BulletFactory : MonoBehaviour
             maxSize: 64);
     }
 
+    private void OnEnable()
+    {
+        if (_eventBus != null) _eventBus.SubscribeTo<LevelLoadRequested>(OnLevelLoadRequested);
+    }
+
+    private void OnDisable()
+    {
+        if (_eventBus != null) _eventBus.UnsubscribeFrom<LevelLoadRequested>(OnLevelLoadRequested);
+    }
+
+    private void OnLevelLoadRequested(ref LevelLoadRequested e)
+    {
+        ClearActive();
+    }
+
+    private void ClearActive()
+    {
+        for (int i = _active.Count - 1; i >= 0; i--)
+        {
+            var b = _active[i];
+            if (b == null) continue;
+            b.Abort();
+            _pool.Release(b);
+        }
+        _active.Clear();
+    }
+
     public BulletController Get()
     {
         var b = _pool.Get();
